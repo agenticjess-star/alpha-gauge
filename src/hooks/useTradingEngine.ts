@@ -41,9 +41,9 @@ export function useTradingEngine() {
   const selectMarket = useCallback((market: Market) => {
     setSelectedMarket(market);
     pfRef.current.reset(market.yesPrice);
-    brierRef.current.reset();
+    brierRef.current?.reset();
     setPfState(pfRef.current.getState());
-    setBrierState(brierRef.current.getState());
+    setBrierState(brierRef.current?.getState?.() ?? defaultBrierState);
     setIsLive(true);
   }, []);
 
@@ -54,8 +54,8 @@ export function useTradingEngine() {
     setPfState(newPfState);
 
     // 2. Record for Brier score
-    brierRef.current.record(newPfState.estimate, market.yesPrice);
-    setBrierState(brierRef.current.getState());
+    brierRef.current?.record(newPfState.estimate, market.yesPrice);
+    setBrierState(brierRef.current?.getState?.() ?? defaultBrierState);
 
     // 3. Run Monte Carlo on filtered probability
     const timeToExpiry = market.endDate
@@ -84,7 +84,7 @@ export function useTradingEngine() {
     // 4. Decision engine
     const ci = newPfState.credibleInterval;
     const ciWidth = ci[1] - ci[0];
-    const newDecision = decisionRef.current.evaluate(
+    const newDecision = decisionRef.current!.evaluate(
       newPfState.estimate, market.yesPrice, newPfState.ess, ciWidth
     );
     
@@ -109,7 +109,7 @@ export function useTradingEngine() {
     });
 
     // 5. Rules
-    const newRules = decisionRef.current.evaluateRules(
+    const newRules = decisionRef.current!.evaluateRules(
       newPfState.estimate, market.yesPrice, newPfState.ess
     );
     setRules(newRules);
