@@ -10,15 +10,23 @@ import type {
 
 export function useTradingEngine() {
   const pfRef = useRef(new ParticleFilter());
-  const brierRef = useRef(new BrierTracker());
-  const decisionRef = useRef(new DecisionEngine());
+  const brierRef = useRef<BrierTracker | null>(null);
+  if (!brierRef.current) {
+    brierRef.current = new BrierTracker();
+  }
+  const decisionRef = useRef<DecisionEngine | null>(null);
+  if (!decisionRef.current) {
+    decisionRef.current = new DecisionEngine();
+  }
+
+  const defaultBrierState: BrierState = { score: 0, entries: [], calibrationLabel: 'GOOD' };
 
   const [selectedMarket, setSelectedMarket] = useState<Market | null>(null);
   const [pfState, setPfState] = useState<ParticleFilterState>(pfRef.current.getState());
   const [mcResult, setMcResult] = useState<MonteCarloResult>({
     probability: 0.5, stdError: 0, ci95: [0, 1], nPaths: 0, samples: [],
   });
-  const [brierState, setBrierState] = useState<BrierState>(brierRef.current.getState());
+  const [brierState, setBrierState] = useState<BrierState>(brierRef.current?.getState?.() ?? defaultBrierState);
   const [decision, setDecision] = useState<Decision>({
     action: 'HOLD', reason: 'Awaiting market selection.', conditions: [], edge: 0, timestamp: Date.now(),
   });
