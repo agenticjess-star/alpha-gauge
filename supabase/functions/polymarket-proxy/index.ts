@@ -4,6 +4,7 @@ const corsHeaders = {
 };
 
 const GAMMA_API = 'https://gamma-api.polymarket.com';
+console.log('polymarket-proxy edge function loaded');
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
