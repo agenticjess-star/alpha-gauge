@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import type { Market } from '@/lib/types';
 
@@ -8,12 +8,14 @@ function parseMarket(raw: any): Market {
 
   try {
     if (raw.outcomePrices) {
-      const prices = JSON.parse(raw.outcomePrices);
+      const prices = typeof raw.outcomePrices === 'string'
+        ? JSON.parse(raw.outcomePrices)
+        : raw.outcomePrices;
       yesPrice = parseFloat(prices[0]) || 0.5;
       noPrice = parseFloat(prices[1]) || 0.5;
     }
   } catch {
-    // If parsing fails, use defaults
+    // fallback
   }
 
   return {
@@ -35,51 +37,48 @@ export function useMarkets(pollInterval = 30000) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastFetch, setLastFetch] = useState<number>(0);
+  const abortRef = useRef<AbortController | null>(null);
 
   const fetchMarkets = useCallback(async () => {
+    // Cancel any in-flight request
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     try {
-      const { data, error: fnError } = await supabase.functions.invoke('polymarket-proxy', {
-        body: null,
-        method: 'GET',
-      });
-
-      if (fnError) {
-        // Try with query params via direct fetch
-        const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
-        const anonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-        const response = await fetch(
-          `https://${projectId}.supabase.co/functions/v1/polymarket-proxy?endpoint=markets&limit=20&active=true&closed=false`,
-          {
-            headers: {
-              'apikey': anonKey,
-              'Content-Type': 'application/json',
-            },
-          }
-        );
-
-        if (!response.ok) {
-          throw new Error(`Proxy error: ${response.status}`);
+      // Use the edge function which now flattens events→markets
+      const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+      const anonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/polymarket-proxy?endpoint=events&limit=20&active=true&closed=false`,
+        {
+          signal: controller.signal,
+          headers: {
+            'apikey': anonKey,
+            'Content-Type': 'application/json',
+          },
         }
+      );
 
-        const rawData = await response.json();
-        const parsed = Array.isArray(rawData)
-          ? rawData.map(parseMarket).filter(m => m.question && m.yesPrice > 0)
-          : [];
-        setMarkets(parsed);
-        setError(null);
-        setLastFetch(Date.now());
-        setLoading(false);
-        return;
+      if (!response.ok) {
+        throw new Error(`Proxy error: ${response.status}`);
       }
 
-      const parsed = Array.isArray(data)
-        ? data.map(parseMarket).filter(m => m.question && m.yesPrice > 0)
+      const rawData = await response.json();
+      const parsed = Array.isArray(rawData)
+        ? rawData.map(parseMarket).filter(m => m.question && m.yesPrice > 0 && m.yesPrice < 1)
         : [];
+
+      // Sort by volume descending — highest activity first
+      parsed.sort((a, b) => b.volume - a.volume);
+
       setMarkets(parsed);
       setError(null);
       setLastFetch(Date.now());
     } catch (err: any) {
-      setError(err.message);
+      if (err.name !== 'AbortError') {
+        setError(err.message);
+      }
     } finally {
       setLoading(false);
     }
@@ -88,7 +87,10 @@ export function useMarkets(pollInterval = 30000) {
   useEffect(() => {
     fetchMarkets();
     const interval = setInterval(fetchMarkets, pollInterval);
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      abortRef.current?.abort();
+    };
   }, [fetchMarkets, pollInterval]);
 
   return { markets, loading, error, lastFetch, refetch: fetchMarkets };
