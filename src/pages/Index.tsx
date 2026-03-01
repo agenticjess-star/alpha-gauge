@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from 'react';
+import { useEffect } from 'react';
 import { TopBar } from '@/components/TopBar';
 import { MarketsPanel } from '@/components/MarketsPanel';
 import { ProbabilityEngine } from '@/components/ProbabilityEngine';
@@ -11,17 +11,16 @@ const Index = () => {
   const { markets, loading, error } = useMarkets(30000);
   const engine = useTradingEngine();
 
-  // When markets update and we have a selected market, find the updated version and process it
+  // Feed real price updates into particle filter on every poll
   useEffect(() => {
-    if (engine.selectedMarket && markets.length > 0) {
-      const updated = markets.find(m => m.id === engine.selectedMarket!.id);
-      if (updated && updated.yesPrice !== engine.selectedMarket.yesPrice) {
-        engine.processObservation(updated);
-      }
+    if (!engine.selectedMarket || markets.length === 0) return;
+    const updated = markets.find(m => m.id === engine.selectedMarket!.id);
+    if (updated && updated.yesPrice !== engine.selectedMarket.yesPrice) {
+      engine.processObservation(updated);
     }
   }, [markets]);
 
-  // Auto-select first market if none selected
+  // Auto-select highest-volume market on first load
   useEffect(() => {
     if (!engine.selectedMarket && markets.length > 0) {
       engine.selectMarket(markets[0]);
