@@ -4,6 +4,9 @@ const corsHeaders = {
 };
 
 const GAMMA_API = 'https://gamma-api.polymarket.com';
+
+const CRYPTO_KEYWORDS = ['bitcoin', 'btc', 'ethereum', 'eth', 'solana', 'sol', 'xrp', 'ripple', 'crypto', 'token', 'blockchain', 'defi'];
+
 console.log('polymarket-proxy edge function loaded');
 
 Deno.serve(async (req) => {
@@ -39,6 +42,8 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+
+    const cryptoOnly = url.searchParams.get('crypto') === 'true';
 
     // Default: fetch events, then flatten nested markets into a single array
     apiUrl = `${GAMMA_API}/events?limit=${limit}&active=${active}&closed=${closed}`;
@@ -86,7 +91,16 @@ Deno.serve(async (req) => {
       }
     }
 
-    return new Response(JSON.stringify(flatMarkets), {
+    // Optionally filter to crypto-related markets
+    const results = cryptoOnly
+      ? flatMarkets.filter((m: any) => {
+          const q = (m.question || '').toLowerCase();
+          const s = (m.slug || '').toLowerCase();
+          return CRYPTO_KEYWORDS.some(kw => q.includes(kw) || s.includes(kw));
+        })
+      : flatMarkets;
+
+    return new Response(JSON.stringify(results), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error) {

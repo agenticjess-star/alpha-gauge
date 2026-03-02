@@ -14,9 +14,9 @@ export default {
     },
     extend: {
       fontFamily: {
-        display: ["Bebas Neue", "sans-serif"],
-        mono: ["Space Mono", "monospace"],
-        body: ["DM Sans", "sans-serif"],
+        display: ["Space Grotesk", "sans-serif"],
+        mono: ["JetBrains Mono", "monospace"],
+        body: ["Inter", "sans-serif"],
       },
       colors: {
         border: "hsl(var(--border))",
@@ -58,6 +58,8 @@ export default {
         },
         dim: "hsl(var(--dim))",
         mid: "hsl(var(--mid))",
+        "chart-up": "hsl(var(--chart-up))",
+        "chart-down": "hsl(var(--chart-down))",
         sidebar: {
           DEFAULT: "hsl(var(--sidebar-background))",
           foreground: "hsl(var(--sidebar-foreground))",
