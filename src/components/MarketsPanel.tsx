@@ -1,6 +1,5 @@
 import { useState, useMemo } from 'react';
 import type { Market } from '@/lib/types';
-import { CryptoQuickSelect, CRYPTO_FILTERS } from './CryptoQuickSelect';
 
 interface MarketsPanelProps {
   markets: Market[];
@@ -8,32 +7,23 @@ interface MarketsPanelProps {
   onSelect: (market: Market) => void;
   loading: boolean;
   error: string | null;
+  /** Slot for the crypto up/down selector + display above market list */
+  children?: React.ReactNode;
 }
 
 type ViewMode = 'list' | 'grid';
 
-export function MarketsPanel({ markets, selectedId, onSelect, loading, error }: MarketsPanelProps) {
-  const [cryptoFilter, setCryptoFilter] = useState('');
+export function MarketsPanel({ markets, selectedId, onSelect, loading, error, children }: MarketsPanelProps) {
+  const [search, setSearch] = useState('');
   const [viewMode, setViewMode] = useState<ViewMode>('list');
 
-  const marketCounts = useMemo(() => {
-    const counts: Record<string, number> = { '': markets.length };
-    for (const f of CRYPTO_FILTERS) {
-      if (f.keyword) {
-        counts[f.keyword] = markets.filter(m =>
-          m.question.toLowerCase().includes(f.keyword) || m.slug?.toLowerCase().includes(f.keyword)
-        ).length;
-      }
-    }
-    return counts;
-  }, [markets]);
-
   const filtered = useMemo(() => {
-    if (!cryptoFilter) return markets;
+    if (!search) return markets;
+    const q = search.toLowerCase();
     return markets.filter(m =>
-      m.question.toLowerCase().includes(cryptoFilter) || m.slug?.toLowerCase().includes(cryptoFilter)
+      m.question.toLowerCase().includes(q) || m.slug?.toLowerCase().includes(q)
     );
-  }, [markets, cryptoFilter]);
+  }, [markets, search]);
 
   return (
     <div className="border-r border-border overflow-y-auto overflow-x-hidden scrollbar-thin flex flex-col min-w-0">
@@ -58,11 +48,8 @@ export function MarketsPanel({ markets, selectedId, onSelect, loading, error }: 
         </div>
       </div>
 
-      <CryptoQuickSelect
-        activeFilter={cryptoFilter}
-        onFilterChange={setCryptoFilter}
-        marketCounts={marketCounts}
-      />
+      {/* Up/Down discovery slot */}
+      {children}
 
       {loading && (
         <div className="p-3 text-[9px] text-muted-foreground tracking-[1px] animate-pulse-live font-mono">
@@ -72,6 +59,15 @@ export function MarketsPanel({ markets, selectedId, onSelect, loading, error }: 
 
       {error && (
         <div className="p-3 text-[9px] text-destructive font-mono truncate">{error}</div>
+      )}
+
+      {/* Divider label for general markets */}
+      {children && (
+        <div className="px-3 py-1.5 border-b border-border">
+          <span className="text-[8px] tracking-[1.5px] text-muted-foreground uppercase font-mono">
+            ALL EVENTS
+          </span>
+        </div>
       )}
 
       {viewMode === 'list' ? (

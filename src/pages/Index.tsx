@@ -1,15 +1,19 @@
 import { useEffect, useState } from 'react';
 import { TopBar } from '@/components/TopBar';
 import { MarketsPanel } from '@/components/MarketsPanel';
+import { CryptoQuickSelect } from '@/components/CryptoQuickSelect';
+import { UpDownDisplay } from '@/components/UpDownDisplay';
 import { ProbabilityEngine } from '@/components/ProbabilityEngine';
 import { RulesEngine } from '@/components/RulesEngine';
 import { GovernancePanel } from '@/components/GovernancePanel';
 import { useMarkets } from '@/hooks/useMarkets';
+import { useUpDownMarkets } from '@/hooks/useUpDownMarkets';
 import { useTradingEngine } from '@/hooks/useTradingEngine';
-import { ChevronLeft, ChevronRight, PanelRightClose, PanelRightOpen } from 'lucide-react';
+import { PanelRightClose, PanelRightOpen } from 'lucide-react';
 
 const Index = () => {
   const { markets, loading, error } = useMarkets(30000);
+  const upDown = useUpDownMarkets({ pollInterval: 20000 });
   const engine = useTradingEngine();
   const [rightCollapsed, setRightCollapsed] = useState(false);
 
@@ -26,6 +30,28 @@ const Index = () => {
       engine.selectMarket(markets[0]);
     }
   }, [markets]);
+
+  // When an up/down market is discovered, auto-select it as the active trading market
+  useEffect(() => {
+    if (upDown.activeMarket && upDown.activeMarket.upPrice !== null) {
+      const m = upDown.activeMarket;
+      const firstMkt = m.markets[0];
+      if (firstMkt) {
+        engine.selectMarket({
+          id: firstMkt.id,
+          question: m.eventTitle,
+          slug: m.eventSlug,
+          yesPrice: m.upPrice ?? 0.5,
+          noPrice: m.downPrice ?? 0.5,
+          volume: parseFloat(firstMkt.volume) || 0,
+          liquidity: parseFloat(firstMkt.liquidity) || 0,
+          endDate: m.endDate,
+          active: true,
+          closed: false,
+        });
+      }
+    }
+  }, [upDown.activeMarket?.eventId]);
 
   return (
     <div className="grid grid-rows-[44px_1fr] h-screen overflow-hidden">
@@ -48,7 +74,20 @@ const Index = () => {
           onSelect={engine.selectMarket}
           loading={loading}
           error={error}
-        />
+        >
+          <CryptoQuickSelect
+            activeAsset={upDown.selectedAsset}
+            activeTimeframe={upDown.selectedTimeframe}
+            onAssetChange={upDown.setSelectedAsset}
+            onTimeframeChange={upDown.setSelectedTimeframe}
+            assetCounts={upDown.assetCounts}
+          />
+          <UpDownDisplay
+            market={upDown.activeMarket}
+            loading={upDown.loading}
+            error={upDown.error}
+          />
+        </MarketsPanel>
 
         <div className="border-r border-border overflow-hidden flex flex-col min-w-0">
           <div className="flex-1 overflow-y-auto scrollbar-thin">
