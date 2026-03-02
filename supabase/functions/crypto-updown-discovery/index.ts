@@ -73,7 +73,7 @@ async function discoverForAsset(asset: string, timeframes: string[]): Promise<Di
   // Try each search query
   for (const query of queries) {
     try {
-      const res = await fetch(`${GAMMA_SEARCH}?query=${encodeURIComponent(query)}`, {
+      const res = await fetch(`${GAMMA_SEARCH}?q=${encodeURIComponent(query)}`, {
         headers: { 'Accept': 'application/json' },
       });
       if (res.ok) {
