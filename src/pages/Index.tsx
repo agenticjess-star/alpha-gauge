@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { TopBar } from '@/components/TopBar';
 import { MarketsPanel } from '@/components/MarketsPanel';
 import { ProbabilityEngine } from '@/components/ProbabilityEngine';
@@ -6,12 +6,13 @@ import { RulesEngine } from '@/components/RulesEngine';
 import { GovernancePanel } from '@/components/GovernancePanel';
 import { useMarkets } from '@/hooks/useMarkets';
 import { useTradingEngine } from '@/hooks/useTradingEngine';
+import { ChevronLeft, ChevronRight, PanelRightClose, PanelRightOpen } from 'lucide-react';
 
 const Index = () => {
   const { markets, loading, error } = useMarkets(30000);
   const engine = useTradingEngine();
+  const [rightCollapsed, setRightCollapsed] = useState(false);
 
-  // Feed real price updates into particle filter on every poll
   useEffect(() => {
     if (!engine.selectedMarket || markets.length === 0) return;
     const updated = markets.find(m => m.id === engine.selectedMarket!.id);
@@ -20,7 +21,6 @@ const Index = () => {
     }
   }, [markets]);
 
-  // Auto-select highest-volume market on first load
   useEffect(() => {
     if (!engine.selectedMarket && markets.length > 0) {
       engine.selectMarket(markets[0]);
@@ -28,14 +28,20 @@ const Index = () => {
   }, [markets]);
 
   return (
-    <div className="grid grid-rows-[48px_1fr] h-screen overflow-hidden">
+    <div className="grid grid-rows-[44px_1fr] h-screen overflow-hidden">
       <TopBar
         isLive={engine.isLive}
         brierScore={engine.brierState.score}
         nParticles={5000}
+        rightCollapsed={rightCollapsed}
+        onToggleRight={() => setRightCollapsed(v => !v)}
       />
 
-      <div className="grid grid-cols-[300px_1fr_280px] overflow-hidden">
+      <div className={`grid overflow-hidden transition-[grid-template-columns] duration-200 ${
+        rightCollapsed
+          ? 'grid-cols-[240px_1fr]'
+          : 'grid-cols-[240px_1fr_220px]'
+      }`}>
         <MarketsPanel
           markets={markets}
           selectedId={engine.selectedMarket?.id || null}
@@ -44,8 +50,8 @@ const Index = () => {
           error={error}
         />
 
-        <div className="border-r border-border overflow-hidden flex flex-col">
-          <div className="flex-1 overflow-y-auto">
+        <div className="border-r border-border overflow-hidden flex flex-col min-w-0">
+          <div className="flex-1 overflow-y-auto scrollbar-thin">
             <ProbabilityEngine
               market={engine.selectedMarket}
               pfState={engine.pfState}
@@ -58,7 +64,9 @@ const Index = () => {
           </div>
         </div>
 
-        <GovernancePanel governance={engine.governance} />
+        {!rightCollapsed && (
+          <GovernancePanel governance={engine.governance} />
+        )}
       </div>
     </div>
   );
