@@ -7,21 +7,45 @@ const GAMMA_SEARCH = 'https://gamma-api.polymarket.com/public-search';
 const GAMMA_EVENTS = 'https://gamma-api.polymarket.com/events';
 const CLOB_PRICE = 'https://clob.polymarket.com/price';
 
-// Search queries per asset + timeframe — these map to how Polymarket names their events
+// Slug patterns we look for in the /events endpoint
+const SLUG_PATTERNS: Record<string, Record<string, string[]>> = {
+  btc: {
+    '5m': ['btc-updown-5m'],
+    '15m': ['btc-updown-15m'],
+    '1h': ['bitcoin-up-or-down'],
+  },
+  eth: {
+    '5m': ['eth-updown-5m'],
+    '15m': ['eth-updown-15m'],
+    '1h': ['ethereum-up-or-down'],
+  },
+  sol: {
+    '5m': ['sol-updown-5m'],
+    '15m': ['sol-updown-15m'],
+    '1h': ['solana-up-or-down'],
+  },
+  xrp: {
+    '5m': ['xrp-updown-5m'],
+    '15m': ['xrp-updown-15m'],
+    '1h': ['xrp-up-or-down'],
+  },
+};
+
+// Search queries for public-search endpoint
 const SEARCH_QUERIES: Record<string, Record<string, string[]>> = {
   btc: {
-    '5m': ['btc updown 5m', 'bitcoin 5 minutes'],
-    '15m': ['btc updown 15m', 'bitcoin 15 minutes'],
+    '5m': ['btc updown 5m'],
+    '15m': ['btc updown 15m'],
     '1h': ['bitcoin up or down'],
   },
   eth: {
-    '5m': ['eth updown 5m', 'ethereum 5 minutes'],
-    '15m': ['eth updown 15m', 'ethereum 15 minutes'],
+    '5m': ['eth updown 5m'],
+    '15m': ['eth updown 15m'],
     '1h': ['ethereum up or down'],
   },
   sol: {
-    '5m': ['sol updown 5m', 'solana 5 minutes'],
-    '15m': ['sol updown 15m', 'solana 15 minutes'],
+    '5m': ['sol updown 5m'],
+    '15m': ['sol updown 15m'],
     '1h': ['solana up or down'],
   },
   xrp: {
@@ -31,22 +55,24 @@ const SEARCH_QUERIES: Record<string, Record<string, string[]>> = {
   },
 };
 
-// Slug patterns for timeframe identification
 function identifyTimeframe(slug: string, title: string): string | null {
   const s = slug.toLowerCase();
   const t = title.toLowerCase();
-  
-  // 5m: slug contains "updown-5m" or "-5m-" or title contains "5 minute"
   if (s.includes('updown-5m') || s.includes('-5m-') || t.includes('5 minute') || t.includes('5 min')) return '5m';
-  
-  // 15m: slug contains "updown-15m" or "-15m-" or title contains "15 minute"  
   if (s.includes('updown-15m') || s.includes('-15m-') || t.includes('15 minute') || t.includes('15 min')) return '15m';
-  
-  // 1h: slug contains "up-or-down" without 5m/15m, or title matches hourly pattern like "March 2, 4PM ET"
-  // Hourly events have titles like "Bitcoin Up or Down - March 2, 4PM ET"
   if ((s.includes('up-or-down') || t.includes('up or down')) && !s.includes('5m') && !s.includes('15m')) return '1h';
-  
   return null;
+}
+
+function slugMatchesAsset(slug: string, asset: string): boolean {
+  const s = slug.toLowerCase();
+  const assetPatterns: Record<string, string[]> = {
+    btc: ['btc', 'bitcoin'],
+    eth: ['eth', 'ethereum'],
+    sol: ['sol', 'solana'],
+    xrp: ['xrp', 'ripple'],
+  };
+  return (assetPatterns[asset] || []).some(p => s.includes(p));
 }
 
 interface DiscoveredMarket {
@@ -100,17 +126,44 @@ async function searchGamma(query: string): Promise<any[]> {
   }
 }
 
-async function discoverForAsset(asset: string, timeframes: string[]): Promise<DiscoveredMarket[]> {
+// Fetch from /events endpoint and filter by slug patterns
+async function fetchEventsForPatterns(patterns: string[]): Promise<any[]> {
+  try {
+    const res = await fetch(
+      `${GAMMA_EVENTS}?active=true&closed=false&limit=100`,
+      { headers: { 'Accept': 'application/json' } }
+    );
+    if (!res.ok) return [];
+    const events = await res.json();
+    if (!Array.isArray(events)) return [];
+    // Filter events whose slug contains any of the patterns
+    return events.filter((ev: any) => {
+      const slug = (ev.slug || '').toLowerCase();
+      return patterns.some(p => slug.includes(p));
+    });
+  } catch {
+    return [];
+  }
+}
+
+async function discoverForAsset(asset: string, timeframes: string[], eventsCache: any[] | null): Promise<DiscoveredMarket[]> {
   const results: DiscoveredMarket[] = [];
+  const now = Date.now();
 
   for (const tf of timeframes) {
+    // Strategy 1: Search via public-search
     const queries = SEARCH_QUERIES[asset]?.[tf] || [`${asset} updown ${tf}`];
-    const allEvents: any[] = [];
-
-    // Search with all queries for this asset+timeframe
     const searchResults = await Promise.all(queries.map(q => searchGamma(q)));
-    for (const events of searchResults) {
-      allEvents.push(...events);
+    const allEvents: any[] = searchResults.flat();
+
+    // Strategy 2: Filter from cached /events endpoint
+    const slugPatterns = SLUG_PATTERNS[asset]?.[tf] || [];
+    if (eventsCache) {
+      const fromEvents = eventsCache.filter((ev: any) => {
+        const slug = (ev.slug || '').toLowerCase();
+        return slugPatterns.some(p => slug.includes(p)) && slugMatchesAsset(slug, asset);
+      });
+      allEvents.push(...fromEvents);
     }
 
     // Deduplicate by id
@@ -125,30 +178,27 @@ async function discoverForAsset(asset: string, timeframes: string[]): Promise<Di
     // Filter: active and not closed
     const active = unique.filter(ev => ev.active !== false && ev.closed !== true);
 
-    console.log(`[${asset}/${tf}] ${unique.length} unique events, ${active.length} active`);
-    if (active.length > 0) {
-      console.log(`[${asset}/${tf}] active slugs: ${active.map((e: any) => e.slug).join(', ')}`);
-      console.log(`[${asset}/${tf}] active titles: ${active.map((e: any) => e.title).join(' | ')}`);
-    }
-
     // Match timeframe from slug/title
     const matching = active.filter(ev => {
       const detected = identifyTimeframe(ev.slug || '', ev.title || '');
       return detected === tf;
     });
 
-    console.log(`[${asset}/${tf}] ${matching.length} matching timeframe`);
-    if (matching.length > 0) {
-      console.log(`[${asset}/${tf}] slugs: ${matching.slice(0, 3).map((e: any) => e.slug).join(', ')}`);
-    }
+    console.log(`[${asset}/${tf}] ${unique.length} unique, ${active.length} active, ${matching.length} matched`);
 
     if (matching.length === 0) continue;
 
-    // Pick latest by endDate (most current/upcoming)
+    // Pick the soonest future endDate (currently active, not furthest out)
     matching.sort((a, b) => {
       const aEnd = new Date(a.endDate || a.end_date || 0).getTime();
       const bEnd = new Date(b.endDate || b.end_date || 0).getTime();
-      return bEnd - aEnd;
+      // Prefer events ending soonest in the future
+      const aFuture = aEnd >= now;
+      const bFuture = bEnd >= now;
+      if (aFuture && !bFuture) return -1;
+      if (!aFuture && bFuture) return 1;
+      if (aFuture && bFuture) return aEnd - bEnd; // soonest first
+      return bEnd - aEnd; // both past: most recent first
     });
 
     const best = matching[0];
@@ -172,11 +222,8 @@ async function discoverForAsset(asset: string, timeframes: string[]): Promise<Di
           upPrice = up;
           downPrice = down;
         }
-      } catch {
-        // fallback
-      }
+      } catch { /* fallback below */ }
 
-      // Fallback to outcomePrices
       if (upPrice === null && market.outcomePrices) {
         try {
           const prices = typeof market.outcomePrices === 'string'
@@ -228,8 +275,22 @@ Deno.serve(async (req) => {
     const assets = assetsParam.split(',').map(s => s.trim().toLowerCase());
     const timeframes = timeframeParam.split(',').map(s => s.trim().toLowerCase());
 
-    // Process all assets in parallel
-    const promises = assets.map(a => discoverForAsset(a, timeframes));
+    // Fetch the full active events list once (shared across all assets)
+    let eventsCache: any[] | null = null;
+    try {
+      const res = await fetch(
+        `${GAMMA_EVENTS}?active=true&closed=false&limit=100`,
+        { headers: { 'Accept': 'application/json' } }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) eventsCache = data;
+      }
+    } catch { /* proceed without cache */ }
+
+    console.log(`Events cache: ${eventsCache?.length ?? 0} events`);
+
+    const promises = assets.map(a => discoverForAsset(a, timeframes, eventsCache));
     const allResults = (await Promise.all(promises)).flat();
 
     return new Response(JSON.stringify(allResults), {
