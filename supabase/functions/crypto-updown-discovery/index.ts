@@ -126,6 +126,10 @@ async function discoverForAsset(asset: string, timeframes: string[]): Promise<Di
     const active = unique.filter(ev => ev.active !== false && ev.closed !== true);
 
     console.log(`[${asset}/${tf}] ${unique.length} unique events, ${active.length} active`);
+    if (active.length > 0) {
+      console.log(`[${asset}/${tf}] active slugs: ${active.map((e: any) => e.slug).join(', ')}`);
+      console.log(`[${asset}/${tf}] active titles: ${active.map((e: any) => e.title).join(' | ')}`);
+    }
 
     // Match timeframe from slug/title
     const matching = active.filter(ev => {
