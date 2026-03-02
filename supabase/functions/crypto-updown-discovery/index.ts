@@ -78,13 +78,23 @@ async function discoverForAsset(asset: string, timeframes: string[]): Promise<Di
       });
       if (res.ok) {
         const data = await res.json();
-        // public-search returns an array of events
+        console.log(`Search "${query}" response type: ${typeof data}, isArray: ${Array.isArray(data)}, keys: ${data && typeof data === 'object' ? Object.keys(data).join(',') : 'n/a'}`);
+        // public-search may return { events: [...] } or just an array
         if (Array.isArray(data)) {
           allEvents.push(...data);
+        } else if (data && typeof data === 'object') {
+          // Try common wrapper keys
+          for (const key of ['events', 'results', 'data', 'items', 'markets']) {
+            if (Array.isArray(data[key])) {
+              console.log(`Found ${data[key].length} items under "${key}"`);
+              allEvents.push(...data[key]);
+              break;
+            }
+          }
         }
       }
-    } catch {
-      // continue
+    } catch (e) {
+      console.error(`Search error for "${query}":`, e);
     }
   }
 
