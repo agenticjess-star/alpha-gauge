@@ -3,7 +3,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
 
-const GAMMA_SEARCH = 'https://gamma-api.polymarket.com/public-search';
+const GAMMA_SEARCH = 'https://gamma-api.polymarket.com/public-search'; // uses ?q= param
 const GAMMA_EVENTS = 'https://gamma-api.polymarket.com/events';
 const CLOB_PRICE = 'https://clob.polymarket.com/price';
 
