@@ -130,6 +130,12 @@ async function discoverForAsset(asset: string, timeframes: string[]): Promise<Di
   // Filter: active, not closed
   const active = unique.filter(ev => ev.active !== false && ev.closed !== true);
 
+  console.log(`Asset "${asset}": ${allEvents.length} raw, ${unique.length} unique, ${active.length} active`);
+  if (active.length > 0) {
+    console.log(`Sample slugs: ${active.slice(0, 3).map((e: any) => e.slug).join(', ')}`);
+    console.log(`Sample titles: ${active.slice(0, 3).map((e: any) => e.title).join(' | ')}`);
+  }
+
   const results: DiscoveredMarket[] = [];
 
   for (const tf of timeframes) {
@@ -138,6 +144,7 @@ async function discoverForAsset(asset: string, timeframes: string[]): Promise<Di
       matchesTimeframe(ev.slug || '', ev.title || '', tf)
     );
 
+    console.log(`Asset "${asset}" tf "${tf}": ${matching.length} matching`);
     if (matching.length === 0) continue;
 
     // Pick the one with the latest endDate (most current)
