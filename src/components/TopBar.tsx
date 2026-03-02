@@ -1,5 +1,4 @@
 import { useLiveClock } from '@/hooks/useLiveClock';
-import type { BrierState } from '@/lib/types';
 
 interface TopBarProps {
   isLive: boolean;
@@ -11,24 +10,26 @@ export function TopBar({ isLive, brierScore, nParticles }: TopBarProps) {
   const { formatted } = useLiveClock();
 
   return (
-    <header className="h-12 bg-background border-b border-border flex items-center px-5 gap-6 z-50">
-      <span className="font-display text-[22px] tracking-[3px] text-primary glow-primary-strong">
+    <header className="h-12 bg-background border-b border-border flex items-center px-5 gap-5 z-50">
+      <span className="font-display text-[18px] font-bold tracking-tight text-primary glow-primary-strong">
         TRADING OS
       </span>
+      <span className="text-[10px] text-muted-foreground font-mono">×</span>
+      <span className="text-[10px] text-muted-foreground tracking-wide font-mono">POLYMARKET</span>
 
-      <div className="flex gap-4 ml-auto items-center">
+      <div className="flex gap-3 ml-auto items-center">
         {isLive && (
-          <span className="text-[10px] tracking-[1px] px-2.5 py-0.5 rounded-sm bg-primary/10 text-primary border border-primary/30 animate-pulse-live">
-            ● PARTICLE FILTER LIVE
+          <span className="text-[10px] tracking-wide px-2.5 py-1 rounded-md bg-primary/8 text-primary border border-primary/20 animate-pulse-live font-mono">
+            ● LIVE
           </span>
         )}
-        <span className="text-[10px] tracking-[1px] px-2.5 py-0.5 rounded-sm bg-secondary text-muted-foreground">
-          BRIER: {brierScore.toFixed(2)}
+        <span className="text-[10px] px-2 py-1 rounded-md bg-secondary text-muted-foreground font-mono">
+          BRIER {brierScore.toFixed(3)}
         </span>
-        <span className="text-[10px] tracking-[1px] px-2.5 py-0.5 rounded-sm bg-secondary text-muted-foreground">
-          PARTICLES: {nParticles.toLocaleString()}
+        <span className="text-[10px] px-2 py-1 rounded-md bg-secondary text-muted-foreground font-mono">
+          N={nParticles.toLocaleString()}
         </span>
-        <span className="text-[11px] text-muted-foreground tracking-[1px]">
+        <span className="text-[10px] text-muted-foreground font-mono">
           {formatted}
         </span>
       </div>
