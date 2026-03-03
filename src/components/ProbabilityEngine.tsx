@@ -15,10 +15,12 @@ interface ProbabilityEngineProps {
   brierState: BrierState;
   decision: Decision;
   getParticles: () => Float64Array;
+  liveSpotPrice?: number | null;
+  spotAsset?: string;
 }
 
 export function ProbabilityEngine({
-  market, pfState, mcResult, brierState, decision, getParticles
+  market, pfState, mcResult, brierState, decision, getParticles, liveSpotPrice, spotAsset
 }: ProbabilityEngineProps) {
   const [timeframe, setTimeframe] = useState('1H');
   const probPercent = (pfState.estimate * 100).toFixed(0);
