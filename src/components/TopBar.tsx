@@ -5,11 +5,14 @@ interface TopBarProps {
   isLive: boolean;
   brierScore: number;
   nParticles: number;
+  spotPrice?: number | null;
+  spotAsset?: string;
+  spotConnected?: boolean;
   rightCollapsed?: boolean;
   onToggleRight?: () => void;
 }
 
-export function TopBar({ isLive, brierScore, nParticles, rightCollapsed, onToggleRight }: TopBarProps) {
+export function TopBar({ isLive, brierScore, nParticles, spotPrice, spotAsset, spotConnected, rightCollapsed, onToggleRight }: TopBarProps) {
   const { formatted } = useLiveClock();
 
   return (
@@ -21,6 +24,13 @@ export function TopBar({ isLive, brierScore, nParticles, rightCollapsed, onToggl
       <span className="text-[9px] text-muted-foreground tracking-wide font-mono">POLYMARKET</span>
 
       <div className="flex gap-2 ml-auto items-center">
+        {spotPrice != null && (
+          <span className="text-[9px] px-1.5 py-0.5 rounded bg-secondary font-mono flex items-center gap-1">
+            <span className={`w-1 h-1 rounded-full ${spotConnected ? 'bg-chart-up animate-pulse-live' : 'bg-muted-foreground'}`} />
+            <span className="text-muted-foreground">{spotAsset?.toUpperCase()}</span>
+            <span className="text-foreground">${spotPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+          </span>
+        )}
         {isLive && (
           <span className="text-[9px] tracking-wide px-2 py-0.5 rounded bg-primary/8 text-primary border border-primary/20 animate-pulse-live font-mono">
             ● LIVE
