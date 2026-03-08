@@ -21,6 +21,7 @@ interface UseClobWebSocketOptions {
 /**
  * Connects to Polymarket CLOB Market WebSocket for real-time
  * Up/Down contract price streaming and new_market discovery.
+ * v2 - with onNewMarket callback support
  */
 export function useClobWebSocket(tokenIds: string[], options?: UseClobWebSocketOptions) {
   const [state, setState] = useState<ClobWebSocketState>({
