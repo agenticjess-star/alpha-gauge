@@ -33,6 +33,8 @@ export function useClobWebSocket(tokenIds: string[], options?: UseClobWebSocketO
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const currentTokenIds = useRef<string[]>([]);
   const reconnectAttempts = useRef(0);
+  const onNewMarketRef = useRef(options?.onNewMarket);
+  onNewMarketRef.current = options?.onNewMarket;
   const maxReconnectDelay = 30000;
 
   const subscribe = useCallback((ws: WebSocket, ids: string[]) => {
