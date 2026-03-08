@@ -77,8 +77,14 @@ export function useUpDownMarkets({ pollInterval = 60000 }: UseUpDownMarketsOptio
     return ids;
   }, [allMarkets]);
 
+  // On new_market from WebSocket, trigger immediate re-discovery
+  const handleNewMarket = useCallback((event: any) => {
+    console.log('[UpDown] New market event received, triggering re-discovery', event);
+    fetchAll();
+  }, [fetchAll]);
+
   // Connect CLOB WebSocket for real-time price streaming
-  const clobWs = useClobWebSocket(allTokenIds);
+  const clobWs = useClobWebSocket(allTokenIds, { onNewMarket: handleNewMarket });
 
   // Merge WebSocket prices into discovered markets
   const marketsWithLivePrices = useMemo(() => {
