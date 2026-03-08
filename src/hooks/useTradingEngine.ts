@@ -9,7 +9,10 @@ import type {
 } from '@/lib/types';
 
 export function useTradingEngine() {
-  const pfRef = useRef(new ParticleFilter());
+  const pfRef = useRef<ParticleFilter | null>(null);
+  if (!pfRef.current) {
+    pfRef.current = new ParticleFilter();
+  }
   const brierRef = useRef<BrierTracker | null>(null);
   if (!brierRef.current) {
     brierRef.current = new BrierTracker();
