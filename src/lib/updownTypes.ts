@@ -25,7 +25,7 @@ export interface UpDownMarket {
 }
 
 export type CryptoAsset = 'btc' | 'eth' | 'sol' | 'xrp';
-export type UpDownTimeframe = '5m' | '15m' | '1h';
+export type UpDownTimeframe = '5m' | '15m';
 
 export const CRYPTO_ASSETS: { label: string; value: CryptoAsset }[] = [
   { label: 'BTC', value: 'btc' },
@@ -37,5 +37,4 @@ export const CRYPTO_ASSETS: { label: string; value: CryptoAsset }[] = [
 export const UPDOWN_TIMEFRAMES: { label: string; value: UpDownTimeframe }[] = [
   { label: '5M', value: '5m' },
   { label: '15M', value: '15m' },
-  { label: '1H', value: '1h' },
 ];

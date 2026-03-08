@@ -6,15 +6,30 @@ const corsHeaders = {
 const GAMMA_API = 'https://gamma-api.polymarket.com';
 const CLOB_PRICE = 'https://clob.polymarket.com/price';
 
+/**
+ * Polymarket Crypto Up/Down Discovery Engine
+ * 
+ * Slug convention (discovered empirically):
+ *   5m:  {asset}-updown-5m-{floor(epoch/300)*300}
+ *   15m: {asset}-updown-15m-{floor(epoch/900)*900}
+ * 
+ * 1h markets do NOT currently exist on Polymarket.
+ * Only 5m and 15m series are active as of March 2026.
+ * 
+ * Discovery uses the direct path endpoint:
+ *   GET /events/slug/{exact-slug}
+ * which is deterministic and avoids unreliable search.
+ */
+
 // Interval sizes in seconds
 const INTERVALS: Record<string, number> = { '5m': 300, '15m': 900 };
 
-// Slug patterns per asset/timeframe
-const SLUG_TEMPLATES: Record<string, Record<string, string>> = {
-  btc: { '5m': 'btc-updown-5m', '15m': 'btc-updown-15m', '1h': 'bitcoin-up-or-down' },
-  eth: { '5m': 'eth-updown-5m', '15m': 'eth-updown-15m', '1h': 'ethereum-up-or-down' },
-  sol: { '5m': 'sol-updown-5m', '15m': 'sol-updown-15m', '1h': 'solana-up-or-down' },
-  xrp: { '5m': 'xrp-updown-5m', '15m': 'xrp-updown-15m', '1h': 'xrp-up-or-down' },
+// Slug base patterns per asset/timeframe
+const SLUG_BASES: Record<string, Record<string, string>> = {
+  btc: { '5m': 'btc-updown-5m', '15m': 'btc-updown-15m' },
+  eth: { '5m': 'eth-updown-5m', '15m': 'eth-updown-15m' },
+  sol: { '5m': 'sol-updown-5m', '15m': 'sol-updown-15m' },
+  xrp: { '5m': 'xrp-updown-5m', '15m': 'xrp-updown-15m' },
 };
 
 interface DiscoveredMarket {
@@ -44,7 +59,8 @@ interface MarketData {
   liquidity: string;
 }
 
-// Fetch a single event by exact slug via path endpoint
+// ─── Gamma API helpers ───────────────────────────────────────
+
 async function fetchEventBySlug(slug: string): Promise<any | null> {
   try {
     const res = await fetch(`${GAMMA_API}/events/slug/${slug}`, {
@@ -52,9 +68,7 @@ async function fetchEventBySlug(slug: string): Promise<any | null> {
     });
     if (!res.ok) return null;
     const data = await res.json();
-    // The path endpoint returns a single event object (not array)
-    if (data && data.id) return data;
-    return null;
+    return data?.id ? data : null;
   } catch {
     return null;
   }
@@ -73,6 +87,8 @@ async function fetchClobPrice(tokenId: string): Promise<number | null> {
   }
 }
 
+// ─── Data extraction ─────────────────────────────────────────
+
 function extractMarket(m: any): MarketData {
   return {
     id: m.id?.toString() || '',
@@ -89,6 +105,7 @@ function extractMarket(m: any): MarketData {
 }
 
 async function getPrices(market: any): Promise<{ up: number | null; down: number | null }> {
+  // Try CLOB first (real-time)
   try {
     const tokenIds = typeof market.clobTokenIds === 'string'
       ? JSON.parse(market.clobTokenIds) : market.clobTokenIds;
@@ -101,6 +118,7 @@ async function getPrices(market: any): Promise<{ up: number | null; down: number
     }
   } catch { /* fallback */ }
 
+  // Fallback to cached outcomePrices
   try {
     const prices = typeof market.outcomePrices === 'string'
       ? JSON.parse(market.outcomePrices) : market.outcomePrices;
@@ -143,43 +161,24 @@ function eventToDiscoveredMarket(
   };
 }
 
-// Generate predictive slugs for 5m/15m using epoch-based naming
+// ─── Slug generation ─────────────────────────────────────────
+
 function generateSlugs(base: string, interval: number, count: number, startEpoch: number): string[] {
-  const slugs: string[] = [];
   const currentWindow = Math.floor(startEpoch / interval) * interval;
-  for (let i = 0; i < count; i++) {
-    slugs.push(`${base}-${currentWindow + i * interval}`);
-  }
-  return slugs;
+  return Array.from({ length: count }, (_, i) => `${base}-${currentWindow + i * interval}`);
 }
 
 function generatePastSlugs(base: string, interval: number, count: number, startEpoch: number): string[] {
-  const slugs: string[] = [];
   const currentWindow = Math.floor(startEpoch / interval) * interval;
-  for (let i = 1; i <= count; i++) {
-    slugs.push(`${base}-${currentWindow - i * interval}`);
-  }
-  return slugs;
+  return Array.from({ length: count }, (_, i) => `${base}-${currentWindow - (i + 1) * interval}`);
 }
 
-// Search-based discovery for 1h markets (unpredictable slug format)
-async function searchGamma(query: string): Promise<any[]> {
-  try {
-    const res = await fetch(`${GAMMA_API}/public-search?q=${encodeURIComponent(query)}`, {
-      headers: { 'Accept': 'application/json' },
-    });
-    if (!res.ok) return [];
-    const data = await res.json();
-    return Array.isArray(data) ? data : [];
-  } catch {
-    return [];
-  }
-}
+// ─── Discovery ───────────────────────────────────────────────
 
-async function discover5m15m(
+async function discoverMarkets(
   asset: string, tf: string, includeHistory: boolean
 ): Promise<DiscoveredMarket[]> {
-  const base = SLUG_TEMPLATES[asset]?.[tf];
+  const base = SLUG_BASES[asset]?.[tf];
   const interval = INTERVALS[tf];
   if (!base || !interval) return [];
 
@@ -198,7 +197,7 @@ async function discover5m15m(
     const ev = upcomingEvents[i];
     if (!ev) continue;
     const endTime = new Date(ev.endDate || '').getTime();
-    if (endTime > now && (!ev.closed)) {
+    if (endTime > now && !ev.closed) {
       if (!bestActive || endTime < new Date(bestActive.event.endDate).getTime()) {
         bestActive = { event: ev, slug: upcomingSlugs[i] };
       }
@@ -214,10 +213,9 @@ async function discover5m15m(
     console.log(`[${asset}/${tf}] No active event found in upcoming windows`);
   }
 
-  // History: past 2 days
+  // History: past events (up to 20 most recent within 2 days)
   if (includeHistory) {
     const twoDaysInWindows = Math.ceil((2 * 24 * 3600) / interval);
-    // Limit to 20 most recent to avoid excessive API calls
     const historyCount = Math.min(twoDaysInWindows, 20);
     const pastSlugs = generatePastSlugs(base, interval, historyCount, nowSec);
 
@@ -225,7 +223,6 @@ async function discover5m15m(
     for (let batch = 0; batch < pastSlugs.length; batch += 10) {
       const batchSlugs = pastSlugs.slice(batch, batch + 10);
       const events = await Promise.all(batchSlugs.map(fetchEventBySlug));
-
       for (const ev of events) {
         if (!ev) continue;
         results.push(eventToDiscoveredMarket(ev, asset, tf, { up: null, down: null }, true));
@@ -238,67 +235,7 @@ async function discover5m15m(
   return results;
 }
 
-async function discover1h(
-  asset: string, includeHistory: boolean
-): Promise<DiscoveredMarket[]> {
-  const base = SLUG_TEMPLATES[asset]?.['1h'];
-  if (!base) return [];
-
-  const results: DiscoveredMarket[] = [];
-
-  // Search for active 1h markets
-  const searchResults = await searchGamma(`${base}`);
-  const now = Date.now();
-
-  // Filter and sort by endDate
-  const filtered = searchResults.filter(ev => {
-    const slug = (ev.slug || '').toLowerCase();
-    return slug.includes(base);
-  });
-
-  filtered.sort((a, b) => {
-    const aEnd = new Date(a.endDate || a.end_date || 0).getTime();
-    const bEnd = new Date(b.endDate || b.end_date || 0).getTime();
-    const aFuture = aEnd >= now;
-    const bFuture = bEnd >= now;
-    if (aFuture && !bFuture) return -1;
-    if (!aFuture && bFuture) return 1;
-    if (aFuture && bFuture) return aEnd - bEnd;
-    return bEnd - aEnd;
-  });
-
-  // Pick the soonest active event
-  const active = filtered.find(ev =>
-    ev.active !== false && !ev.closed &&
-    new Date(ev.endDate || ev.end_date || 0).getTime() > now
-  );
-
-  if (active) {
-    const firstMarket = active.markets?.[0];
-    const prices = firstMarket ? await getPrices(firstMarket) : { up: null, down: null };
-    results.push(eventToDiscoveredMarket(active, asset, '1h', prices));
-    console.log(`[${asset}/1h] Active: ${active.slug}`);
-  } else {
-    console.log(`[${asset}/1h] No active event found`);
-  }
-
-  // Resolved history
-  if (includeHistory) {
-    const resolved = filtered.filter(ev => {
-      const end = new Date(ev.endDate || ev.end_date || 0).getTime();
-      const twoDaysAgo = now - 2 * 24 * 3600 * 1000;
-      return end < now && end >= twoDaysAgo;
-    });
-
-    for (const ev of resolved.slice(0, 10)) {
-      results.push(eventToDiscoveredMarket(ev, asset, '1h', { up: null, down: null }, true));
-    }
-
-    console.log(`[${asset}/1h] ${resolved.length} resolved in 2-day window`);
-  }
-
-  return results;
-}
+// ─── HTTP handler ────────────────────────────────────────────
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -308,21 +245,22 @@ Deno.serve(async (req) => {
   try {
     const url = new URL(req.url);
     const assetsParam = url.searchParams.get('assets') || 'btc,eth,sol,xrp';
-    const timeframeParam = url.searchParams.get('timeframe') || '5m,15m,1h';
+    const timeframeParam = url.searchParams.get('timeframe') || '5m,15m';
     const includeHistory = url.searchParams.get('history') !== 'false';
 
     const assets = assetsParam.split(',').map(s => s.trim().toLowerCase());
-    const timeframes = timeframeParam.split(',').map(s => s.trim().toLowerCase());
+    const timeframes = timeframeParam.split(',').map(s => s.trim().toLowerCase())
+      .filter(tf => tf === '5m' || tf === '15m'); // Only supported timeframes
+
+    if (timeframes.length === 0) {
+      timeframes.push('5m', '15m');
+    }
 
     // Run all discoveries in parallel
     const promises: Promise<DiscoveredMarket[]>[] = [];
     for (const asset of assets) {
       for (const tf of timeframes) {
-        if (tf === '1h') {
-          promises.push(discover1h(asset, includeHistory));
-        } else {
-          promises.push(discover5m15m(asset, tf, includeHistory));
-        }
+        promises.push(discoverMarkets(asset, tf, includeHistory));
       }
     }
 
