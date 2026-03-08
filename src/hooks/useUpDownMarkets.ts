@@ -23,7 +23,7 @@ export function useUpDownMarkets({ pollInterval = 60000 }: UseUpDownMarketsOptio
       const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
       const anonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
       const res = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/crypto-updown-discovery?assets=btc,eth,sol,xrp&timeframe=5m,15m`,
+        `https://${projectId}.supabase.co/functions/v1/crypto-updown-discovery?assets=btc,eth,sol,xrp&timeframe=5m,15m,1h,4h,daily`,
         {
           signal: controller.signal,
           headers: {
@@ -57,7 +57,7 @@ export function useUpDownMarkets({ pollInterval = 60000 }: UseUpDownMarketsOptio
     };
   }, [fetchAll, pollInterval]);
 
-  // Extract all clobTokenIds from discovered markets for WebSocket subscription
+  // Extract all clobTokenIds for WebSocket subscription
   const allTokenIds = useMemo(() => {
     const ids: string[] = [];
     for (const mkt of allMarkets) {
@@ -77,13 +77,11 @@ export function useUpDownMarkets({ pollInterval = 60000 }: UseUpDownMarketsOptio
     return ids;
   }, [allMarkets]);
 
-  // On new_market from WebSocket, trigger immediate re-discovery
   const handleNewMarket = useCallback((event: any) => {
     console.log('[UpDown] New market event received, triggering re-discovery', event);
     fetchAll();
   }, [fetchAll]);
 
-  // Connect CLOB WebSocket for real-time price streaming
   const clobWs = useClobWebSocket(allTokenIds, { onNewMarket: handleNewMarket });
 
   // Merge WebSocket prices into discovered markets
@@ -104,7 +102,6 @@ export function useUpDownMarkets({ pollInterval = 60000 }: UseUpDownMarketsOptio
         const wsUpPrice = clobWs.prices[tokenIds[0]];
         const wsDownPrice = clobWs.prices[tokenIds[1]];
 
-        // Only override if we got a WS price
         return {
           ...mkt,
           upPrice: wsUpPrice ?? mkt.upPrice,
@@ -116,10 +113,13 @@ export function useUpDownMarkets({ pollInterval = 60000 }: UseUpDownMarketsOptio
     });
   }, [allMarkets, clobWs.prices]);
 
-  // Get the active market for current selection
-  const activeMarket = marketsWithLivePrices.find(
+  // Filter markets for current selection
+  const filteredMarkets = marketsWithLivePrices.filter(
     m => m.asset === selectedAsset && m.timeframe === selectedTimeframe
-  ) || null;
+  );
+
+  // Get the active (non-resolved) market for current selection
+  const activeMarket = filteredMarkets.find(m => !m.resolved) || null;
 
   // Get counts per asset
   const assetCounts = marketsWithLivePrices.reduce((acc, m) => {
@@ -128,7 +128,7 @@ export function useUpDownMarkets({ pollInterval = 60000 }: UseUpDownMarketsOptio
   }, {} as Record<string, number>);
 
   return {
-    allMarkets: marketsWithLivePrices,
+    allMarkets: filteredMarkets,
     activeMarket,
     selectedAsset,
     selectedTimeframe,

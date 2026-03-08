@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 
 const CLOB_WS_URL = 'wss://ws-subscriptions-clob.polymarket.com/ws/market';
+const CLOB_PING_INTERVAL = 10000; // 10s heartbeat per docs
 
 export interface ClobPriceUpdate {
   tokenId: string;
@@ -19,9 +20,10 @@ interface UseClobWebSocketOptions {
 }
 
 /**
- * Connects to Polymarket CLOB Market WebSocket for real-time
- * Up/Down contract price streaming and new_market discovery.
- * v2 - with onNewMarket callback support
+ * Polymarket CLOB Market WebSocket — v3
+ * - PING heartbeat every 10s (required by docs)
+ * - best_bid_ask event support for cleaner price feed
+ * - Dynamic subscribe/unsubscribe without reconnecting
  */
 export function useClobWebSocket(tokenIds: string[], options?: UseClobWebSocketOptions) {
   const [state, setState] = useState<ClobWebSocketState>({
@@ -32,15 +34,31 @@ export function useClobWebSocket(tokenIds: string[], options?: UseClobWebSocketO
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pingTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const currentTokenIds = useRef<string[]>([]);
   const reconnectAttempts = useRef(0);
   const onNewMarketRef = useRef(options?.onNewMarket);
   onNewMarketRef.current = options?.onNewMarket;
   const maxReconnectDelay = 30000;
 
+  const stopPing = useCallback(() => {
+    if (pingTimer.current) {
+      clearInterval(pingTimer.current);
+      pingTimer.current = null;
+    }
+  }, []);
+
+  const startPing = useCallback((ws: WebSocket) => {
+    stopPing();
+    pingTimer.current = setInterval(() => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send('PING');
+      }
+    }, CLOB_PING_INTERVAL);
+  }, [stopPing]);
+
   const subscribe = useCallback((ws: WebSocket, ids: string[]) => {
     if (ids.length === 0 || ws.readyState !== WebSocket.OPEN) return;
-
     const msg = {
       assets_ids: ids,
       type: 'market',
@@ -55,6 +73,7 @@ export function useClobWebSocket(tokenIds: string[], options?: UseClobWebSocketO
       wsRef.current.close();
       wsRef.current = null;
     }
+    stopPing();
 
     const ws = new WebSocket(CLOB_WS_URL);
     wsRef.current = ws;
@@ -64,9 +83,13 @@ export function useClobWebSocket(tokenIds: string[], options?: UseClobWebSocketO
       reconnectAttempts.current = 0;
       setState(prev => ({ ...prev, connected: true }));
       subscribe(ws, currentTokenIds.current);
+      startPing(ws);
     };
 
     ws.onmessage = (event) => {
+      // Ignore PONG
+      if (event.data === 'PONG') return;
+
       try {
         const msgs = JSON.parse(event.data);
         const updates = Array.isArray(msgs) ? msgs : [msgs];
@@ -76,7 +99,16 @@ export function useClobWebSocket(tokenIds: string[], options?: UseClobWebSocketO
           const newPrices = { ...prev.prices };
 
           for (const msg of updates) {
-            // price_change event: { event_type: "price_change", asset_id, price, ... }
+            // best_bid_ask event (preferred — cleanest price source)
+            if (msg.event_type === 'best_bid_ask' && msg.asset_id && msg.best_bid != null) {
+              const price = typeof msg.best_bid === 'string' ? parseFloat(msg.best_bid) : msg.best_bid;
+              if (!isNaN(price) && price > 0) {
+                newPrices[msg.asset_id] = price;
+                changed = true;
+              }
+            }
+
+            // price_change event
             if (msg.event_type === 'price_change' && msg.asset_id && msg.price != null) {
               const price = typeof msg.price === 'string' ? parseFloat(msg.price) : msg.price;
               if (!isNaN(price) && price > 0) {
@@ -94,7 +126,7 @@ export function useClobWebSocket(tokenIds: string[], options?: UseClobWebSocketO
               }
             }
 
-            // book event — extract best bid as price estimate
+            // book event — extract best bid
             if (msg.event_type === 'book' && msg.asset_id && msg.bids?.length > 0) {
               const bestBid = msg.bids[0];
               const price = typeof bestBid.price === 'string' ? parseFloat(bestBid.price) : bestBid.price;
@@ -104,7 +136,7 @@ export function useClobWebSocket(tokenIds: string[], options?: UseClobWebSocketO
               }
             }
 
-            // new_market event — log for discovery
+            // new_market event
             if (msg.event_type === 'new_market') {
               console.log('[CLOB-WS] New market detected:', msg);
               onNewMarketRef.current?.(msg);
@@ -125,26 +157,24 @@ export function useClobWebSocket(tokenIds: string[], options?: UseClobWebSocketO
 
     ws.onclose = () => {
       setState(prev => ({ ...prev, connected: false }));
-      // Exponential backoff reconnect
+      stopPing();
       const delay = Math.min(1000 * 2 ** reconnectAttempts.current, maxReconnectDelay);
       reconnectAttempts.current++;
       console.log(`[CLOB-WS] Reconnecting in ${delay}ms`);
       reconnectTimer.current = setTimeout(connect, delay);
     };
-  }, [subscribe]);
+  }, [subscribe, startPing, stopPing]);
 
-  // Update subscriptions when tokenIds change
+  // Dynamic subscribe/unsubscribe when tokenIds change (no reconnect needed)
   useEffect(() => {
     const prev = currentTokenIds.current;
     const next = tokenIds.filter(Boolean);
 
-    // Check if changed
     const same = prev.length === next.length && prev.every((id, i) => id === next[i]);
     if (same) return;
 
     currentTokenIds.current = next;
 
-    // If already connected, re-subscribe
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       subscribe(wsRef.current, next);
     }
@@ -156,6 +186,7 @@ export function useClobWebSocket(tokenIds: string[], options?: UseClobWebSocketO
     connect();
 
     return () => {
+      stopPing();
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
       if (wsRef.current) {
         wsRef.current.close();
