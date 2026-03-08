@@ -8,6 +8,8 @@ export interface UpDownMarket {
   endDate: string;
   upPrice: number | null;
   downPrice: number | null;
+  resolved?: boolean;
+  outcome?: string | null; // 'Up' | 'Down' | null
   markets: {
     id: string;
     question: string;
