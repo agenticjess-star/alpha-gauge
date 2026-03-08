@@ -10,18 +10,19 @@ export interface ClobPriceUpdate {
 
 export interface ClobWebSocketState {
   connected: boolean;
-  prices: Record<string, number>; // tokenId -> latest price
+  prices: Record<string, number>;
   lastUpdate: number | null;
+}
+
+interface UseClobWebSocketOptions {
+  onNewMarket?: (event: any) => void;
 }
 
 /**
  * Connects to Polymarket CLOB Market WebSocket for real-time
  * Up/Down contract price streaming and new_market discovery.
- *
- * Subscribe to specific token IDs (clobTokenIds from discovered markets).
- * Receives: price_change, book, last_trade_price, new_market events.
  */
-export function useClobWebSocket(tokenIds: string[]) {
+export function useClobWebSocket(tokenIds: string[], options?: UseClobWebSocketOptions) {
   const [state, setState] = useState<ClobWebSocketState>({
     connected: false,
     prices: {},
