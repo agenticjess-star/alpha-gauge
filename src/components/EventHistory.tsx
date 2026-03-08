@@ -13,12 +13,15 @@ export function EventHistory({ allMarkets, activeMarketId }: EventHistoryProps) 
     const up: UpDownMarket[] = [];
 
     for (const m of allMarkets) {
-      if (!m.endDate) continue;
-      const end = new Date(m.endDate).getTime();
-      if (end <= now) {
+      if (m.resolved) {
         exp.push(m);
-      } else {
-        up.push(m);
+      } else if (m.endDate) {
+        const end = new Date(m.endDate).getTime();
+        if (end <= now) {
+          exp.push(m);
+        } else {
+          up.push(m);
+        }
       }
     }
 
