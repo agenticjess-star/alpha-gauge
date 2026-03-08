@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import type { CryptoAsset } from '@/lib/updownTypes';
 
 const RTDS_URL = 'wss://ws-live-data.polymarket.com';
+const RTDS_PING_INTERVAL = 5000; // 5s heartbeat per docs
 
 const ASSET_SYMBOLS: Record<CryptoAsset, string> = {
   btc: 'btcusdt',
@@ -27,14 +28,31 @@ export function useCryptoPrice(asset: CryptoAsset) {
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pingTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const currentAsset = useRef(asset);
 
+  const stopPing = useCallback(() => {
+    if (pingTimer.current) {
+      clearInterval(pingTimer.current);
+      pingTimer.current = null;
+    }
+  }, []);
+
+  const startPing = useCallback((ws: WebSocket) => {
+    stopPing();
+    pingTimer.current = setInterval(() => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send('PING');
+      }
+    }, RTDS_PING_INTERVAL);
+  }, [stopPing]);
+
   const connect = useCallback(() => {
-    // Clean up existing
     if (wsRef.current) {
       wsRef.current.close();
       wsRef.current = null;
     }
+    stopPing();
 
     const symbol = ASSET_SYMBOLS[currentAsset.current];
     const ws = new WebSocket(RTDS_URL);
@@ -51,34 +69,28 @@ export function useCryptoPrice(asset: CryptoAsset) {
         }],
       }));
       setState(prev => ({ ...prev, connected: true, symbol }));
+      startPing(ws);
     };
 
     ws.onmessage = (event) => {
+      // Ignore PONG responses
+      if (event.data === 'PONG') return;
+
       try {
         const data = JSON.parse(event.data);
-        // RTDS sends arrays of price updates
-        if (Array.isArray(data)) {
-          for (const update of data) {
-            if (update.symbol?.toLowerCase() === symbol || update.s?.toLowerCase() === symbol) {
-              const price = parseFloat(update.price ?? update.p ?? update.value ?? update.c);
-              if (!isNaN(price) && price > 0) {
-                setState(prev => ({
-                  ...prev,
-                  price,
-                  timestamp: Date.now(),
-                }));
-              }
+        const processUpdate = (update: any) => {
+          if (update.symbol?.toLowerCase() === symbol || update.s?.toLowerCase() === symbol) {
+            const price = parseFloat(update.price ?? update.p ?? update.value ?? update.c);
+            if (!isNaN(price) && price > 0) {
+              setState(prev => ({ ...prev, price, timestamp: Date.now() }));
             }
           }
-        } else if (data.symbol?.toLowerCase() === symbol || data.s?.toLowerCase() === symbol) {
-          const price = parseFloat(data.price ?? data.p ?? data.value ?? data.c);
-          if (!isNaN(price) && price > 0) {
-            setState(prev => ({
-              ...prev,
-              price,
-              timestamp: Date.now(),
-            }));
-          }
+        };
+
+        if (Array.isArray(data)) {
+          data.forEach(processUpdate);
+        } else {
+          processUpdate(data);
         }
       } catch {
         // ignore non-JSON messages
@@ -91,12 +103,11 @@ export function useCryptoPrice(asset: CryptoAsset) {
 
     ws.onclose = () => {
       setState(prev => ({ ...prev, connected: false }));
-      // Reconnect after 5s
+      stopPing();
       reconnectTimer.current = setTimeout(connect, 5000);
     };
-  }, []);
+  }, [startPing, stopPing]);
 
-  // Reconnect when asset changes
   useEffect(() => {
     currentAsset.current = asset;
     setState({
@@ -108,13 +119,14 @@ export function useCryptoPrice(asset: CryptoAsset) {
     connect();
 
     return () => {
+      stopPing();
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
       if (wsRef.current) {
         wsRef.current.close();
         wsRef.current = null;
       }
     };
-  }, [asset, connect]);
+  }, [asset, connect, stopPing]);
 
   return state;
 }

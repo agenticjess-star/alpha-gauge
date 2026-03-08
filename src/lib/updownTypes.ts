@@ -1,7 +1,7 @@
 /** Discovered up/down market from Gamma search + CLOB pricing */
 export interface UpDownMarket {
   asset: string;       // btc, eth, sol, xrp
-  timeframe: string;   // 5m, 15m, 1h
+  timeframe: string;   // 5m, 15m, 1h, 4h, daily
   eventId: string;
   eventSlug: string;
   eventTitle: string;
@@ -25,7 +25,7 @@ export interface UpDownMarket {
 }
 
 export type CryptoAsset = 'btc' | 'eth' | 'sol' | 'xrp';
-export type UpDownTimeframe = '5m' | '15m';
+export type UpDownTimeframe = '5m' | '15m' | '1h' | '4h' | 'daily';
 
 export const CRYPTO_ASSETS: { label: string; value: CryptoAsset }[] = [
   { label: 'BTC', value: 'btc' },
@@ -37,4 +37,7 @@ export const CRYPTO_ASSETS: { label: string; value: CryptoAsset }[] = [
 export const UPDOWN_TIMEFRAMES: { label: string; value: UpDownTimeframe }[] = [
   { label: '5M', value: '5m' },
   { label: '15M', value: '15m' },
+  { label: '1H', value: '1h' },
+  { label: '4H', value: '4h' },
+  { label: 'D', value: 'daily' },
 ];
