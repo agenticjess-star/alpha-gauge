@@ -106,6 +106,8 @@ const Index = () => {
             error={upDown.error}
             liveSpotPrice={cryptoPrice.price}
             spotConnected={cryptoPrice.connected}
+            clobConnected={upDown.clobConnected}
+            clobLastUpdate={upDown.clobLastUpdate}
           />
 
           <EventHistory

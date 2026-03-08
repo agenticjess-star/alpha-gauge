@@ -6,9 +6,11 @@ interface UpDownDisplayProps {
   error: string | null;
   liveSpotPrice: number | null;
   spotConnected: boolean;
+  clobConnected?: boolean;
+  clobLastUpdate?: number | null;
 }
 
-export function UpDownDisplay({ market, loading, error, liveSpotPrice, spotConnected }: UpDownDisplayProps) {
+export function UpDownDisplay({ market, loading, error, liveSpotPrice, spotConnected, clobConnected, clobLastUpdate }: UpDownDisplayProps) {
   if (loading) {
     return (
       <div className="px-3 py-4 text-center">
@@ -56,9 +58,15 @@ export function UpDownDisplay({ market, loading, error, liveSpotPrice, spotConne
         <div className="text-[10px] text-foreground font-medium leading-[1.3] line-clamp-2 flex-1">
           {market.eventTitle}
         </div>
-        <div className="flex items-center gap-1 shrink-0">
-          <span className={`w-1.5 h-1.5 rounded-full ${spotConnected ? 'bg-chart-up animate-pulse-live' : 'bg-muted-foreground'}`} />
-          <span className="text-[7px] text-muted-foreground font-mono">SPOT</span>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <div className="flex items-center gap-0.5" title="RTDS spot price feed">
+            <span className={`w-1.5 h-1.5 rounded-full ${spotConnected ? 'bg-chart-up animate-pulse-live' : 'bg-muted-foreground'}`} />
+            <span className="text-[7px] text-muted-foreground font-mono">SPOT</span>
+          </div>
+          <div className="flex items-center gap-0.5" title="CLOB market WebSocket">
+            <span className={`w-1.5 h-1.5 rounded-full ${clobConnected ? 'bg-primary animate-pulse-live' : 'bg-muted-foreground'}`} />
+            <span className="text-[7px] text-muted-foreground font-mono">CLOB</span>
+          </div>
         </div>
       </div>
 
