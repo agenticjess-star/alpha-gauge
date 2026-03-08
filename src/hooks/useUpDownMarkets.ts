@@ -36,7 +36,23 @@ export function useUpDownMarkets({ pollInterval = 60000 }: UseUpDownMarketsOptio
       if (!res.ok) throw new Error(`Discovery error: ${res.status}`);
       const data = await res.json();
       if (Array.isArray(data)) {
-        setAllMarkets(data);
+        // Merge: preserve existing WS-sourced prices — don't let REST overwrite
+        // with stale 1¢ values from low-liquidity snapshots
+        setAllMarkets(prev => {
+          const prevPriceMap = new Map<string, { up: number | null; down: number | null }>();
+          for (const m of prev) {
+            if (m.upPrice != null && m.upPrice > 0.02) {
+              prevPriceMap.set(m.eventSlug, { up: m.upPrice, down: m.downPrice });
+            }
+          }
+          return data.map((m: any) => {
+            const cached = prevPriceMap.get(m.eventSlug);
+            if (cached && (!m.upPrice || m.upPrice <= 0.02)) {
+              return { ...m, upPrice: cached.up, downPrice: cached.down };
+            }
+            return m;
+          });
+        });
         setError(null);
       }
     } catch (err: any) {

@@ -99,38 +99,12 @@ export function useClobWebSocket(tokenIds: string[], options?: UseClobWebSocketO
           const newPrices = { ...prev.prices };
 
           for (const msg of updates) {
-            // best_bid_ask event (preferred — cleanest price source)
+            // ONLY use best_bid_ask — the cleanest, most reliable price source.
+            // price_change and last_trade_price can carry misleading 1¢ values
+            // from micro-trades or stale order books.
             if (msg.event_type === 'best_bid_ask' && msg.asset_id && msg.best_bid != null) {
               const price = typeof msg.best_bid === 'string' ? parseFloat(msg.best_bid) : msg.best_bid;
-              if (!isNaN(price) && price > 0) {
-                newPrices[msg.asset_id] = price;
-                changed = true;
-              }
-            }
-
-            // price_change event
-            if (msg.event_type === 'price_change' && msg.asset_id && msg.price != null) {
-              const price = typeof msg.price === 'string' ? parseFloat(msg.price) : msg.price;
-              if (!isNaN(price) && price > 0) {
-                newPrices[msg.asset_id] = price;
-                changed = true;
-              }
-            }
-
-            // last_trade_price event
-            if (msg.event_type === 'last_trade_price' && msg.asset_id && msg.price != null) {
-              const price = typeof msg.price === 'string' ? parseFloat(msg.price) : msg.price;
-              if (!isNaN(price) && price > 0) {
-                newPrices[msg.asset_id] = price;
-                changed = true;
-              }
-            }
-
-            // book event — extract best bid
-            if (msg.event_type === 'book' && msg.asset_id && msg.bids?.length > 0) {
-              const bestBid = msg.bids[0];
-              const price = typeof bestBid.price === 'string' ? parseFloat(bestBid.price) : bestBid.price;
-              if (!isNaN(price) && price > 0) {
+              if (!isNaN(price) && price > 0.01) {
                 newPrices[msg.asset_id] = price;
                 changed = true;
               }
