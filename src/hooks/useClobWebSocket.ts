@@ -106,6 +106,7 @@ export function useClobWebSocket(tokenIds: string[], options?: UseClobWebSocketO
             // new_market event — log for discovery
             if (msg.event_type === 'new_market') {
               console.log('[CLOB-WS] New market detected:', msg);
+              onNewMarketRef.current?.(msg);
             }
           }
 
