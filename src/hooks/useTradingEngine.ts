@@ -9,7 +9,10 @@ import type {
 } from '@/lib/types';
 
 export function useTradingEngine() {
-  const pfRef = useRef(new ParticleFilter());
+  const pfRef = useRef<ParticleFilter | null>(null);
+  if (!pfRef.current) {
+    pfRef.current = new ParticleFilter();
+  }
   const brierRef = useRef<BrierTracker | null>(null);
   if (!brierRef.current) {
     brierRef.current = new BrierTracker();
@@ -22,7 +25,7 @@ export function useTradingEngine() {
   const defaultBrierState: BrierState = { score: 0, entries: [], calibrationLabel: 'GOOD' };
 
   const [selectedMarket, setSelectedMarket] = useState<Market | null>(null);
-  const [pfState, setPfState] = useState<ParticleFilterState>(pfRef.current.getState());
+  const [pfState, setPfState] = useState<ParticleFilterState>(pfRef.current!.getState());
   const [mcResult, setMcResult] = useState<MonteCarloResult>({
     probability: 0.5, stdError: 0, ci95: [0, 1], nPaths: 0, samples: [],
   });
