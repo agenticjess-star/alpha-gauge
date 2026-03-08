@@ -1,172 +1,308 @@
-# Trading OS — Polymarket Crypto Up/Down Engine
+# Trading OS — Polymarket Crypto Up/Down Real-Time Engine
 
-A real-time prediction market dashboard that tracks **Polymarket's rotating crypto Up/Down contracts** across BTC, ETH, SOL, and XRP. Built with React + Vite, powered by Supabase Edge Functions for API proxying, and Polymarket's CLOB WebSocket for sub-second price streaming.
+A real-time trading intelligence dashboard that streams live crypto Up/Down contract prices from Polymarket, combining deterministic market discovery with sub-second WebSocket price feeds. Built to be the fastest, most reliable way to monitor and analyze rotating binary crypto markets.
 
-## The Core Problem
+## Tech Stack
 
-Polymarket creates **new prediction markets every 5 and 15 minutes** for each crypto asset (BTC, ETH, SOL, XRP). Each market asks: "Will the price go Up or Down in this window?" These markets rotate on a fixed schedule — but the challenge is **discovering them programmatically** because they don't appear in Polymarket's standard search.
+- **Frontend**: React 18, Vite, TypeScript, Tailwind CSS, shadcn/ui
+- **Backend**: Lovable Cloud (Supabase Edge Functions)
+- **Data Sources**: Polymarket Gamma API, CLOB WebSocket, RTDS WebSocket
+- **Analysis**: Particle Filter, Monte Carlo simulation, Brier scoring, Decision Engine
 
-## The Discovery Pattern (Key Insight)
+---
 
-### Deterministic Slug Generation
+## 🔑 The Polymarket Price Pipeline (Source of Truth)
 
-The breakthrough: Polymarket's rotating crypto markets follow a **predictable slug convention** tied to Unix epoch timestamps:
+This is the critical section. Everything below documents the exact patterns, endpoints, and protocols needed to wire up real-time Polymarket crypto data into any application.
+
+### Market Discovery: Two Strategies
+
+Polymarket uses **two different slug conventions** for crypto Up/Down markets:
+
+#### Strategy 1: Deterministic Epoch-Based Slugs (5m, 15m, 4h)
+
+These timeframes follow a predictable, computable pattern:
 
 ```
-{asset}-updown-{timeframe}-{floor(epoch / interval) * interval}
+Pattern: {asset}-updown-{timeframe}-{epoch_timestamp}
+Epoch:   floor(unix_seconds / interval) * interval
+
+Examples:
+  btc-updown-5m-1772959800    → 5min window starting at that epoch
+  eth-updown-15m-1772959500   → 15min window
+  btc-updown-4h-1772946000    → 4hour window
 ```
 
-Examples (for a 5-minute window starting at epoch 1772958600):
-- `btc-updown-5m-1772958600`
-- `eth-updown-5m-1772958600`
-- `sol-updown-15m-1772958600`
-- `xrp-updown-15m-1772958600`
+| Timeframe | Interval (seconds) | Slug Pattern |
+|-----------|-------------------|--------------|
+| 5m        | 300               | `{asset}-updown-5m-{epoch}` |
+| 15m       | 900               | `{asset}-updown-15m-{epoch}` |
+| 4h        | 14400             | `{asset}-updown-4h-{epoch}` |
 
-This means we can **predict** the exact slug of any past, current, or future market by simply doing:
+**Discovery method**: Direct fetch via `GET https://gamma-api.polymarket.com/events/slug/{exact-slug}`
+
+This is **deterministic** — you can compute the slug for any past or future window without searching. To find the currently active market, generate slugs for the current window + next few windows, fetch them all in parallel, and pick the one with `endDate > now && !closed`.
 
 ```typescript
-const interval = 300; // 5m = 300s, 15m = 900s
-const currentWindow = Math.floor(Date.now() / 1000 / interval) * interval;
+// Generate the current window slug
+const interval = 300; // 5m
+const nowSec = Math.floor(Date.now() / 1000);
+const currentWindow = Math.floor(nowSec / interval) * interval;
 const slug = `btc-updown-5m-${currentWindow}`;
+
+// Direct fetch — guaranteed to hit if market exists
+const event = await fetch(`https://gamma-api.polymarket.com/events/slug/${slug}`);
 ```
 
-### Direct Path Endpoint (Not Search)
+**2-day lookback/lookahead**: Generate past slugs by subtracting intervals, future by adding. For 5m markets, 2 days = 576 windows. We cap at 20 most recent for performance.
 
-Instead of using Polymarket's unreliable `public-search` endpoint, we hit the **direct path endpoint**:
+#### Strategy 2: Human-Readable Slugs (1h, Daily)
+
+These timeframes use **non-deterministic** slug patterns with human-readable dates:
 
 ```
-GET https://gamma-api.polymarket.com/events/slug/{exact-slug}
+1h examples:
+  bitcoin-up-or-down-march-8-4am-et
+  ethereum-up-or-down-march-8-2pm-et
+
+Daily examples:
+  bitcoin-up-or-down-on-march-8
+  solana-up-or-down-on-march-9
 ```
 
-This returns the full event with all market data, CLOB token IDs, and outcome prices — instantly and deterministically.
+**Discovery method**: Search via `GET https://gamma-api.polymarket.com/events?title={query}&active=true`
 
-### 2-Day Rolling Window
+Since these slugs can't be predicted, we search by title (e.g., "bitcoin up or down") and classify results by parsing the time range in the title to distinguish 1h from 4h from daily.
 
-By generating slugs for past windows, we pull **up to 20 resolved historical events** per asset/timeframe, giving the model:
-- Resolved outcomes (Up/Down) for calibration
-- Historical volume and liquidity data
-- Win/loss patterns for Brier score tracking
+**Classification logic**:
+- Title has 1-hour time range (e.g., "4AM-5AM") → `1h`
+- Title has 4-hour time range (e.g., "4AM-8AM") → `4h`  
+- Title/slug contains "on march 8" pattern → `daily`
 
-### What About 1-Hour Markets?
+### Verified Live Market URLs
 
-**They don't exist on Polymarket** (as of March 2026). Only 5-minute and 15-minute crypto Up/Down series are active. The Gamma API tags confirm only `5M` series exist — no `1H` tag or series was found. This was verified by exhaustive search of the Gamma events API, public-search endpoint, tag filtering, and series endpoint.
+| Timeframe | Example URL | Slug Type |
+|-----------|-------------|-----------|
+| 5m | `polymarket.com/event/btc-updown-5m-1772959200` | Epoch ✅ |
+| 15m | `polymarket.com/event/btc-updown-15m-1772959500` | Epoch ✅ |
+| 1h | `polymarket.com/event/bitcoin-up-or-down-march-8-4am-et` | Human ⚠️ |
+| 4h | `polymarket.com/event/btc-updown-4h-1772946000` | Epoch ✅ |
+| Daily | `polymarket.com/event/bitcoin-up-or-down-on-march-8` | Human ⚠️ |
+
+### Assets Supported
+
+| Asset | Epoch slug prefix | Search terms |
+|-------|-------------------|--------------|
+| BTC   | `btc-updown-*` | "bitcoin" |
+| ETH   | `eth-updown-*` | "ethereum" |
+| SOL   | `sol-updown-*` | "solana" |
+| XRP   | `xrp-updown-*` | "xrp" |
+
+---
+
+## Real-Time Price Streaming: Two WebSockets
+
+### 1. CLOB Market WebSocket (Contract Prices — Up/Down probabilities)
+
+```
+URL: wss://ws-subscriptions-clob.polymarket.com/ws/market
+```
+
+Streams live bid/ask/trade prices for Up/Down contracts (the actual probabilities).
+
+**Subscribe message**:
+```json
+{
+  "assets_ids": ["<token_id_1>", "<token_id_2>"],
+  "type": "market",
+  "custom_feature_enabled": true
+}
+```
+
+**Critical: `custom_feature_enabled: true`** unlocks these events:
+| Event | Data | Best For |
+|-------|------|----------|
+| `best_bid_ask` | best_bid, best_ask, spread | **Cleanest price source** |
+| `price_change` | price | Price movement tracking |
+| `last_trade_price` | price | Last executed trade |
+| `book` | bids[], asks[] | Full order book |
+| `new_market` | slug, assets_ids, outcomes | **Market rotation detection** |
+
+**⚠️ HEARTBEAT REQUIRED**: Send literal string `PING` every **10 seconds** or the connection drops.
+
+**Dynamic subscribe/unsubscribe**: When markets rotate, send new subscribe messages with new token IDs — no reconnect needed.
+
+**Token IDs**: Found in each market's `clobTokenIds` field (JSON array). Index 0 = Up token, Index 1 = Down token.
+
+### 2. RTDS WebSocket (Spot Prices — actual crypto prices)
+
+```
+URL: wss://ws-live-data.polymarket.com
+```
+
+Streams underlying crypto spot prices (BTC/USD, ETH/USD, etc.).
+
+**Subscribe message**:
+```json
+{
+  "action": "subscribe",
+  "subscriptions": [{
+    "topic": "crypto_prices",
+    "type": "update",
+    "filters": "btcusdt"
+  }]
+}
+```
+
+**Symbols**: `btcusdt`, `ethusdt`, `solusdt`, `xrpusdt` (Binance-style)
+
+**Alternative**: Chainlink feed via topic `crypto_prices_chainlink` with symbols like `btc/usd`. Chainlink offers sponsored API keys via [signup form](https://pm-ds-request.streams.chain.link/).
+
+**⚠️ HEARTBEAT REQUIRED**: Send literal string `PING` every **5 seconds**.
+
+---
+
+## REST Fallback (Polling)
+
+For initial load and WebSocket fallback:
+
+**Single price**:
+```
+GET https://clob.polymarket.com/price?token_id={id}&side=BUY
+```
+
+**Batch prices** (up to 500 tokens per request):
+```
+POST https://clob.polymarket.com/prices
+Body: { "token_ids": ["id1", "id2", ...] }
+```
+
+**Event discovery**:
+```
+GET https://gamma-api.polymarket.com/events/slug/{slug}          ← deterministic
+GET https://gamma-api.polymarket.com/events?title={query}&active=true  ← search
+```
+
+---
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                     TRADING OS (React)                       │
-├─────────────┬───────────────────────┬───────────────────────┤
-│  Left Panel │    Center Panel       │   Right Panel          │
-│  Discovery  │  Probability Engine   │   Governance           │
-│  + History  │  + Particle Filter    │   + Decision Log       │
-│             │  + Monte Carlo        │                        │
-│             │  + Brier Score        │                        │
-└──────┬──────┴──────────┬────────────┴───────────────────────┘
-       │                 │
-       ▼                 ▼
-┌──────────────┐  ┌──────────────────┐
-│ CLOB WebSocket│  │ RTDS WebSocket   │
-│ (Market Prices)│  │ (Spot Prices)    │
-│ wss://ws-sub..│  │ wss://ws-live... │
-└──────────────┘  └──────────────────┘
-       │
-       ▼
-┌──────────────────────────────────────┐
-│    Supabase Edge Function            │
-│    crypto-updown-discovery           │
-│                                      │
-│  • Predictive slug generation        │
-│  • Direct path endpoint fetching     │
-│  • CLOB price lookup per token       │
-│  • 2-day historical lookback         │
-│  • Outcome detection (resolved)      │
-└──────────────────────────────────────┘
-       │
-       ▼
-┌──────────────────────────────────────┐
-│    Polymarket Gamma API              │
-│    gamma-api.polymarket.com          │
-│                                      │
-│  /events/slug/{slug}  ← direct hit  │
-│  /public-search       ← NOT used    │
-└──────────────────────────────────────┘
+┌─────────────────────────────────────────────────────┐
+│                    Frontend (React)                  │
+│                                                      │
+│  ┌──────────┐  ┌──────────┐  ┌────────────────────┐ │
+│  │ useCrypto│  │ useClob  │  │ useUpDownMarkets   │ │
+│  │ Price    │  │ WebSocket│  │ (orchestrator)     │ │
+│  │ (RTDS)  │  │ (CLOB)   │  │                    │ │
+│  └────┬─────┘  └────┬─────┘  └─────────┬──────────┘ │
+│       │              │                  │            │
+│       ▼              ▼                  ▼            │
+│  Spot prices    Contract prices    Discovery polling │
+│  (5s PING)      (10s PING)         (20s interval)   │
+└───────┬──────────────┬──────────────────┬────────────┘
+        │              │                  │
+        ▼              ▼                  ▼
+   RTDS WebSocket  CLOB WebSocket   Edge Function
+   (Binance feed)  (Polymarket)     (Supabase)
+                                         │
+                                         ▼
+                                    Gamma API
+                                    CLOB REST
 ```
 
-## Real-Time Data Pipeline
+### Data Flow
 
-### 1. Discovery Layer (Edge Function, 20s poll)
-- Generates predictive slugs for current + next 3 windows
-- Fetches active events via direct Gamma path endpoint
-- Fetches CLOB prices for Up/Down token IDs
-- Returns enriched `DiscoveredMarket[]` with live prices
+1. **Discovery** (Edge Function, every 20s + on `new_market` event):
+   - Generates deterministic slugs for 5m/15m/4h
+   - Searches Gamma API for 1h/daily
+   - Fetches CLOB prices for active markets
+   - Returns all discovered markets with initial prices
 
-### 2. CLOB WebSocket (Sub-second updates)
-- Connects to `wss://ws-subscriptions-clob.polymarket.com/ws/market`
-- Subscribes to all active token IDs with `custom_feature_enabled: true`
-- Streams `price_change`, `last_trade_price`, and `book` events
-- Listens for `new_market` events to trigger instant re-discovery
+2. **Live Contract Prices** (CLOB WebSocket, sub-second):
+   - Subscribes to all discovered token IDs
+   - `best_bid_ask` events provide cleanest price feed
+   - `new_market` events trigger instant re-discovery
+   - Merged into market state via React useMemo
 
-### 3. Spot Price WebSocket (RTDS)
-- Connects to `wss://ws-live-data.polymarket.com`
-- Streams live crypto spot prices (BTC, ETH, SOL, XRP)
-- Used for "price to beat" comparison in the UI
+3. **Live Spot Prices** (RTDS WebSocket, sub-second):
+   - Streams actual crypto prices (BTC $87,500, etc.)
+   - Used for "price to beat" comparison in Up/Down markets
 
-### 4. Market Rotation
-When a market expires:
-1. The `new_market` event fires on the CLOB WebSocket
-2. `useUpDownMarkets` immediately calls `fetchAll()`
-3. The edge function generates the next window's slug
-4. New market is discovered and prices start streaming
-5. Fallback: 20-second REST poll catches anything missed
+### Event-Driven Market Rotation
+
+When a 5-minute market expires and the next one is created:
+
+1. CLOB WebSocket fires `new_market` event with new token IDs
+2. `useUpDownMarkets` receives event → triggers immediate `fetchAll()`
+3. Edge function discovers new active window via slug prediction
+4. New token IDs are sent to CLOB WebSocket via dynamic subscribe
+5. Prices start streaming for the new market — no reconnection needed
+
+---
+
+## Analysis Pipeline
+
+The probability engine processes live market data through:
+
+1. **Particle Filter** (5000 particles) — Bayesian state estimation
+2. **Monte Carlo** — Forward simulation of price paths
+3. **Brier Scoring** — Calibration tracking of prediction accuracy
+4. **Decision Engine** — BUY/HOLD/EXIT signals with confidence intervals
+5. **Rules Engine** — Hard rule evaluation (edge thresholds, volume checks)
+6. **Governance** — Decision logging and audit trail
+
+---
 
 ## Key Files
 
 | File | Purpose |
 |------|---------|
 | `supabase/functions/crypto-updown-discovery/index.ts` | Edge function: slug generation, Gamma API, CLOB pricing |
-| `src/hooks/useUpDownMarkets.ts` | React hook: discovery polling, WS integration, market selection |
-| `src/hooks/useClobWebSocket.ts` | CLOB WebSocket: real-time contract price streaming |
-| `src/hooks/useCryptoPrice.ts` | RTDS WebSocket: live spot price streaming |
+| `src/hooks/useClobWebSocket.ts` | CLOB WebSocket: contract price streaming with 10s PING |
+| `src/hooks/useCryptoPrice.ts` | RTDS WebSocket: spot price streaming with 5s PING |
+| `src/hooks/useUpDownMarkets.ts` | Orchestrator: discovery polling + WS price merging |
 | `src/hooks/useTradingEngine.ts` | Particle filter, Monte Carlo, Brier score, decision engine |
 | `src/lib/updownTypes.ts` | Type definitions for markets, assets, timeframes |
-| `src/components/UpDownDisplay.tsx` | Active market display with Up/Down percentages |
-| `src/components/EventHistory.tsx` | Historical timeline with resolved outcomes |
-| `src/components/ProbabilityEngine.tsx` | Probability visualization suite |
 
-## Tech Stack
+## Slug Pattern Reference (Copy-Paste Ready)
 
-- **Frontend**: React 18, TypeScript, Vite, Tailwind CSS, shadcn/ui
-- **Backend**: Supabase Edge Functions (Deno)
-- **Data Sources**: Polymarket Gamma API, CLOB WebSocket, RTDS WebSocket
-- **Charting**: Recharts
-- **State**: React hooks + WebSocket refs (no external state management)
+```typescript
+// ─── Epoch-based (5m, 15m, 4h) ──────────────────
+const INTERVALS = { '5m': 300, '15m': 900, '4h': 14400 };
 
-## Slug Reference Table
+function getActiveSlug(asset: string, tf: string): string {
+  const interval = INTERVALS[tf];
+  const epoch = Math.floor(Date.now() / 1000);
+  const window = Math.floor(epoch / interval) * interval;
+  return `${asset}-updown-${tf}-${window}`;
+}
 
-| Asset | 5-Minute | 15-Minute |
-|-------|----------|-----------|
-| BTC | `btc-updown-5m-{epoch}` | `btc-updown-15m-{epoch}` |
-| ETH | `eth-updown-5m-{epoch}` | `eth-updown-15m-{epoch}` |
-| SOL | `sol-updown-5m-{epoch}` | `sol-updown-15m-{epoch}` |
-| XRP | `xrp-updown-5m-{epoch}` | `xrp-updown-15m-{epoch}` |
+// Direct fetch — guaranteed to hit if market exists
+fetch(`https://gamma-api.polymarket.com/events/slug/${getActiveSlug('btc', '5m')}`);
 
-Where `{epoch}` = `Math.floor(unixTimestamp / intervalSeconds) * intervalSeconds`
+// ─── Search-based (1h, daily) ────────────────────
+// 1h: search "bitcoin up or down", filter by 1-hour time range in title
+// daily: search "bitcoin up or down", filter by "on {date}" pattern
+fetch(`https://gamma-api.polymarket.com/events?title=bitcoin+up+or+down&active=true`);
+```
 
-## API Endpoints Used
+## API Endpoints Reference
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
-| `gamma-api.polymarket.com/events/slug/{slug}` | GET | Fetch specific event by deterministic slug |
-| `clob.polymarket.com/price?token_id={id}&side=BUY` | GET | Fetch current CLOB price for a token |
-| `wss://ws-subscriptions-clob.polymarket.com/ws/market` | WS | Real-time market price streaming |
-| `wss://ws-live-data.polymarket.com` | WS | Real-time spot price streaming |
+| `gamma-api.polymarket.com/events/slug/{slug}` | GET | Fetch event by deterministic slug |
+| `gamma-api.polymarket.com/events?title={q}&active=true` | GET | Search events by title |
+| `clob.polymarket.com/price?token_id={id}&side=BUY` | GET | Single token price |
+| `clob.polymarket.com/prices` | POST | Batch token prices (up to 500) |
+| `wss://ws-subscriptions-clob.polymarket.com/ws/market` | WS | Contract price streaming (10s PING) |
+| `wss://ws-live-data.polymarket.com` | WS | Spot price streaming (5s PING) |
 
-## Running Locally
+## Quick Start
 
 ```bash
 npm install
 npm run dev
 ```
 
-The app requires the Supabase Edge Function to be deployed for market discovery. The WebSocket connections to Polymarket are made directly from the browser.
+The app automatically discovers active markets, connects WebSockets with proper heartbeats, streams live prices, and rotates to new markets as they're created on-chain.
