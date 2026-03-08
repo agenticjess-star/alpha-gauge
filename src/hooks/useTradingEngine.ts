@@ -25,7 +25,7 @@ export function useTradingEngine() {
   const defaultBrierState: BrierState = { score: 0, entries: [], calibrationLabel: 'GOOD' };
 
   const [selectedMarket, setSelectedMarket] = useState<Market | null>(null);
-  const [pfState, setPfState] = useState<ParticleFilterState>(pfRef.current.getState());
+  const [pfState, setPfState] = useState<ParticleFilterState>(pfRef.current!.getState());
   const [mcResult, setMcResult] = useState<MonteCarloResult>({
     probability: 0.5, stdError: 0, ci95: [0, 1], nPaths: 0, samples: [],
   });
