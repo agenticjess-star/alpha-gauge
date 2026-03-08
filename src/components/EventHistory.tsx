@@ -99,9 +99,9 @@ function EventRow({
   const timeLabel = market.endDate ? getRelativeTime(market.endDate) : '';
 
   // Determine outcome for resolved markets
-  const resolved = status === 'resolved';
-  const upWon = resolved && market.upPrice !== null && market.upPrice > 0.9;
-  const downWon = resolved && market.downPrice !== null && market.downPrice > 0.9;
+  const resolved = status === 'resolved' || !!market.resolved;
+  const upWon = resolved && (market.outcome === 'Up' || (market.upPrice !== null && market.upPrice > 0.9));
+  const downWon = resolved && (market.outcome === 'Down' || (market.downPrice !== null && market.downPrice > 0.9));
 
   return (
     <div
