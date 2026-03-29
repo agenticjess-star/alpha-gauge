@@ -10,22 +10,18 @@ import { useMarkets } from '@/hooks/useMarkets';
 import { useUpDownMarkets } from '@/hooks/useUpDownMarkets';
 import { useTradingEngine } from '@/hooks/useTradingEngine';
 import { useCryptoPrice } from '@/hooks/useCryptoPrice';
-import { PanelRightClose, PanelRightOpen } from 'lucide-react';
+import { usePriceHistory } from '@/hooks/usePriceHistory';
 
 const Index = () => {
   const { markets, loading, error } = useMarkets(30000);
   const upDown = useUpDownMarkets({ pollInterval: 20000 });
   const engine = useTradingEngine();
   const cryptoPrice = useCryptoPrice(upDown.selectedAsset);
+  const { history: priceHistory, reset: resetHistory } = usePriceHistory(cryptoPrice.price);
   const [rightCollapsed, setRightCollapsed] = useState(false);
 
-  // Feed live spot price changes into particle filter
-  useEffect(() => {
-    if (cryptoPrice.price !== null && engine.isLive && engine.selectedMarket) {
-      // Normalize: if market is probability-based (0-1), we don't feed raw USD price
-      // Instead we use it for display; the particle filter gets fed from market price updates
-    }
-  }, [cryptoPrice.price]);
+  // Reset price history when asset changes
+  useEffect(() => { resetHistory(); }, [upDown.selectedAsset]);
 
   useEffect(() => {
     if (!engine.selectedMarket || markets.length === 0) return;
@@ -41,7 +37,6 @@ const Index = () => {
     }
   }, [markets]);
 
-  // When an up/down market is discovered, auto-select it as active
   useEffect(() => {
     if (upDown.activeMarket && upDown.activeMarket.upPrice !== null) {
       const m = upDown.activeMarket;
@@ -78,16 +73,16 @@ const Index = () => {
 
       <div className={`grid overflow-hidden transition-[grid-template-columns] duration-200 ${
         rightCollapsed
-          ? 'grid-cols-[220px_1fr]'
-          : 'grid-cols-[220px_1fr_200px]'
+          ? 'grid-cols-[200px_1fr]'
+          : 'grid-cols-[200px_1fr_180px]'
       }`}>
         {/* Left: Discovery + Event History */}
         <div className="border-r border-border overflow-y-auto overflow-x-hidden scrollbar-thin flex flex-col min-w-0">
-          <div className="px-3 py-2.5 border-b border-border flex items-center justify-between sticky top-0 bg-background z-20">
-            <span className="text-[9px] tracking-[1.5px] text-muted-foreground uppercase font-medium">
-              UP/DOWN
+          <div className="px-3 py-2 border-b border-border flex items-center justify-between sticky top-0 bg-background z-20">
+            <span className="text-[8px] tracking-[1.5px] text-muted-foreground uppercase font-mono font-medium">
+              MARKETS
             </span>
-            <span className="text-[9px] px-1 py-0.5 bg-secondary text-muted-foreground rounded font-mono">
+            <span className="text-[8px] px-1 py-0.5 bg-secondary text-muted-foreground rounded font-mono">
               {upDown.allMarkets.length}
             </span>
           </div>
@@ -116,21 +111,21 @@ const Index = () => {
           />
         </div>
 
-        {/* Center: Probability Engine */}
+        {/* Center: Probability Engine — The Main Stage */}
         <div className="border-r border-border overflow-hidden flex flex-col min-w-0">
-          <div className="flex-1 overflow-y-auto scrollbar-thin">
-            <ProbabilityEngine
-              market={engine.selectedMarket}
-              pfState={engine.pfState}
-              mcResult={engine.mcResult}
-              brierState={engine.brierState}
-              decision={engine.decision}
-              getParticles={engine.getParticleProbabilities}
-              liveSpotPrice={cryptoPrice.price}
-              spotAsset={upDown.selectedAsset}
-            />
-            <RulesEngine rules={engine.rules} />
-          </div>
+          <ProbabilityEngine
+            market={engine.selectedMarket}
+            pfState={engine.pfState}
+            mcResult={engine.mcResult}
+            brierState={engine.brierState}
+            decision={engine.decision}
+            getParticles={engine.getParticleProbabilities}
+            liveSpotPrice={cryptoPrice.price}
+            spotAsset={upDown.selectedAsset}
+            upDownMarket={upDown.activeMarket}
+            priceHistory={priceHistory}
+          />
+          <RulesEngine rules={engine.rules} />
         </div>
 
         {/* Right: Governance */}
