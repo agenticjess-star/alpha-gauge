@@ -145,6 +145,11 @@
     animation: pulse-live 2s ease-in-out infinite;
   }
 
+  /* Smooth price transitions */
+  .price-smooth {
+    transition: color 0.7s ease, text-shadow 0.7s ease;
+  }
+
   .scrollbar-thin {
     scrollbar-width: thin;
     scrollbar-color: hsl(220 14% 16%) transparent;
