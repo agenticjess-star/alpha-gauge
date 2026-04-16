@@ -1,7 +1,7 @@
-import { useState } from 'react';
 import type { Market, ParticleFilterState, MonteCarloResult, BrierState, Decision } from '@/lib/types';
 import type { UpDownMarket } from '@/lib/updownTypes';
 import type { PricePoint } from '@/hooks/usePriceHistory';
+import { extractPriceToBeat, getTimeRemaining } from '@/lib/marketDisplay';
 import { ParticleCanvas } from './ParticleCanvas';
 import { MonteCarloGrid } from './MonteCarloGrid';
 import { BrierScoreDisplay } from './BrierScoreDisplay';
@@ -19,12 +19,6 @@ interface ProbabilityEngineProps {
   spotAsset?: string;
   upDownMarket?: UpDownMarket | null;
   priceHistory?: PricePoint[];
-}
-
-function extractPriceToBeat(title: string): number | null {
-  const match = title.match(/\$([0-9,]+(?:\.\d+)?)/);
-  if (!match) return null;
-  return parseFloat(match[1].replace(/,/g, '')) || null;
 }
 
 export function ProbabilityEngine({
@@ -47,6 +41,11 @@ export function ProbabilityEngine({
     <div className="flex flex-col h-full">
       {/* Hero: Live Spot + Up/Down Prices */}
       <div className="px-5 pt-4 pb-3 border-b border-border">
+        <div className="mb-3 rounded border border-primary/20 bg-primary/5 px-2.5 py-1.5">
+          <span className="text-[8px] uppercase tracking-[1.2px] font-mono text-primary/90">
+            Through line: spot vs strike → probability edge → decision
+          </span>
+        </div>
         {/* Market title + link */}
         <div className="flex items-center justify-between mb-3">
           <div className="text-[10px] text-foreground/70 font-medium leading-snug line-clamp-1 flex-1 mr-2">
@@ -189,14 +188,4 @@ export function ProbabilityEngine({
       </div>
     </div>
   );
-}
-
-function getTimeRemaining(endDate: string): string {
-  const diff = new Date(endDate).getTime() - Date.now();
-  if (diff <= 0) return 'EXPIRED';
-  const mins = Math.floor(diff / 60000);
-  if (mins < 60) return `${mins}m left`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ${mins % 60}m`;
-  return `${Math.floor(hrs / 24)}d left`;
 }

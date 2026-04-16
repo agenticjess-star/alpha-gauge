@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 export interface PricePoint {
   time: number;
@@ -20,10 +20,10 @@ export function usePriceHistory(price: number | null, maxPoints = MAX_POINTS) {
     });
   }, [price, maxPoints]);
 
-  const reset = () => {
+  const reset = useCallback(() => {
     setHistory([]);
     lastPrice.current = null;
-  };
+  }, []);
 
   return { history, reset };
 }

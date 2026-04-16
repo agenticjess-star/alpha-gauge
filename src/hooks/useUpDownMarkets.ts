@@ -18,6 +18,7 @@ export function useUpDownMarkets({ pollInterval = 60000 }: UseUpDownMarketsOptio
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
+    setLoading(true);
 
     try {
       const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
@@ -75,7 +76,7 @@ export function useUpDownMarkets({ pollInterval = 60000 }: UseUpDownMarketsOptio
 
   // Extract all clobTokenIds for WebSocket subscription
   const allTokenIds = useMemo(() => {
-    const ids: string[] = [];
+    const ids = new Set<string>();
     for (const mkt of allMarkets) {
       for (const m of mkt.markets) {
         if (m.clobTokenIds) {
@@ -84,13 +85,15 @@ export function useUpDownMarkets({ pollInterval = 60000 }: UseUpDownMarketsOptio
               ? JSON.parse(m.clobTokenIds)
               : m.clobTokenIds;
             if (Array.isArray(parsed)) {
-              ids.push(...parsed.filter((id: string) => typeof id === 'string' && id.length > 0));
+              parsed
+                .filter((id: string) => typeof id === 'string' && id.length > 0)
+                .forEach((id: string) => ids.add(id));
             }
           } catch { /* ignore */ }
         }
       }
     }
-    return ids;
+    return Array.from(ids).sort();
   }, [allMarkets]);
 
   const handleNewMarket = useCallback((event: any) => {

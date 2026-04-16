@@ -123,7 +123,7 @@ export function useTradingEngine() {
     if (selectedMarket && isLive) {
       processObservation(selectedMarket);
     }
-  }, [selectedMarket?.yesPrice]);
+  }, [selectedMarket, isLive, processObservation]);
 
   return {
     selectedMarket,

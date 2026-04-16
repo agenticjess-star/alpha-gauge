@@ -1,4 +1,5 @@
 import type { UpDownMarket } from '@/lib/updownTypes';
+import { extractPriceToBeat, getTimeRemaining } from '@/lib/marketDisplay';
 
 interface UpDownDisplayProps {
   market: UpDownMarket | null;
@@ -130,25 +131,4 @@ export function UpDownDisplay({ market, loading, error, liveSpotPrice, spotConne
       </div>
     </div>
   );
-}
-
-function getTimeRemaining(endDate: string): string {
-  const diff = new Date(endDate).getTime() - Date.now();
-  if (diff <= 0) return 'EXPIRED';
-  const mins = Math.floor(diff / 60000);
-  if (mins < 60) return `${mins}m left`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ${mins % 60}m left`;
-  const days = Math.floor(hrs / 24);
-  return `${days}d left`;
-}
-
-/** Extract the numeric price threshold from market titles like "BTC above $87,500" */
-function extractPriceToBeat(title: string): number | null {
-  // Match patterns like "$87,500" or "$2,345.67" or "$150"
-  const match = title.match(/\$([0-9,]+(?:\.\d+)?)/);
-  if (!match) return null;
-  const cleaned = match[1].replace(/,/g, '');
-  const val = parseFloat(cleaned);
-  return isNaN(val) ? null : val;
 }

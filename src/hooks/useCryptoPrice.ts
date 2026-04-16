@@ -30,6 +30,7 @@ export function useCryptoPrice(asset: CryptoAsset) {
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pingTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const currentAsset = useRef(asset);
+  const shouldReconnect = useRef(true);
 
   const stopPing = useCallback(() => {
     if (pingTimer.current) {
@@ -48,6 +49,13 @@ export function useCryptoPrice(asset: CryptoAsset) {
   }, [stopPing]);
 
   const connect = useCallback(() => {
+    if (!shouldReconnect.current) return;
+
+    if (reconnectTimer.current) {
+      clearTimeout(reconnectTimer.current);
+      reconnectTimer.current = null;
+    }
+
     if (wsRef.current) {
       wsRef.current.close();
       wsRef.current = null;
@@ -104,11 +112,14 @@ export function useCryptoPrice(asset: CryptoAsset) {
     ws.onclose = () => {
       setState(prev => ({ ...prev, connected: false }));
       stopPing();
-      reconnectTimer.current = setTimeout(connect, 5000);
+      if (shouldReconnect.current) {
+        reconnectTimer.current = setTimeout(connect, 5000);
+      }
     };
   }, [startPing, stopPing]);
 
   useEffect(() => {
+    shouldReconnect.current = true;
     currentAsset.current = asset;
     setState({
       price: null,
@@ -119,6 +130,7 @@ export function useCryptoPrice(asset: CryptoAsset) {
     connect();
 
     return () => {
+      shouldReconnect.current = false;
       stopPing();
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
       if (wsRef.current) {
