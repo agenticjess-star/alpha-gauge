@@ -6,14 +6,12 @@ import { EventHistory } from '@/components/EventHistory';
 import { ProbabilityEngine } from '@/components/ProbabilityEngine';
 import { RulesEngine } from '@/components/RulesEngine';
 import { GovernancePanel } from '@/components/GovernancePanel';
-import { useMarkets } from '@/hooks/useMarkets';
 import { useUpDownMarkets } from '@/hooks/useUpDownMarkets';
 import { useTradingEngine } from '@/hooks/useTradingEngine';
 import { useCryptoPrice } from '@/hooks/useCryptoPrice';
 import { usePriceHistory } from '@/hooks/usePriceHistory';
 
 const Index = () => {
-  const { markets, loading, error } = useMarkets(30000);
   const upDown = useUpDownMarkets({ pollInterval: 20000 });
   const engine = useTradingEngine();
   const cryptoPrice = useCryptoPrice(upDown.selectedAsset);
@@ -21,28 +19,14 @@ const Index = () => {
   const [rightCollapsed, setRightCollapsed] = useState(false);
 
   // Reset price history when asset changes
-  useEffect(() => { resetHistory(); }, [upDown.selectedAsset]);
-
-  useEffect(() => {
-    if (!engine.selectedMarket || markets.length === 0) return;
-    const updated = markets.find(m => m.id === engine.selectedMarket!.id);
-    if (updated && updated.yesPrice !== engine.selectedMarket.yesPrice) {
-      engine.processObservation(updated);
-    }
-  }, [markets]);
-
-  useEffect(() => {
-    if (!engine.selectedMarket && markets.length > 0) {
-      engine.selectMarket(markets[0]);
-    }
-  }, [markets]);
+  useEffect(() => { resetHistory(); }, [resetHistory, upDown.selectedAsset]);
 
   useEffect(() => {
     if (upDown.activeMarket && upDown.activeMarket.upPrice !== null) {
       const m = upDown.activeMarket;
       const firstMkt = m.markets[0];
       if (firstMkt) {
-        engine.selectMarket({
+        const nextMarket = {
           id: firstMkt.id,
           question: m.eventTitle,
           slug: m.eventSlug,
@@ -53,10 +37,15 @@ const Index = () => {
           endDate: m.endDate,
           active: true,
           closed: false,
-        });
+        };
+        if (!engine.selectedMarket || engine.selectedMarket.id !== nextMarket.id) {
+          engine.selectMarket(nextMarket);
+        } else if (nextMarket.yesPrice !== engine.selectedMarket.yesPrice) {
+          engine.processObservation(nextMarket);
+        }
       }
     }
-  }, [upDown.activeMarket?.eventId]);
+  }, [upDown.activeMarket, engine.selectedMarket, engine.selectMarket, engine.processObservation]);
 
   return (
     <div className="grid grid-rows-[44px_1fr] h-screen overflow-hidden">

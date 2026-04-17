@@ -2,6 +2,17 @@
 
 A real-time trading intelligence dashboard that streams live crypto Up/Down contract prices from Polymarket, combining deterministic market discovery with sub-second WebSocket price feeds. Built to be the fastest, most reliable way to monitor and analyze rotating binary crypto markets.
 
+## Product Through-Line (Operator Clarity)
+
+The UI is intentionally organized around a single decision flow:
+
+1. **Spot vs strike** — “Is the underlying currently above/below the market threshold?”
+2. **Implied probability** — “What is Polymarket pricing for UP vs DOWN right now?”
+3. **Model edge** — “Does filtered probability disagree with market enough to matter?”
+4. **Action** — “BUY / HOLD / EXIT with explainable conditions + governance log.”
+
+This “spot → probability → edge → action” chain is reflected in the center panel and top-bar telemetry so operators can reason quickly under time pressure.
+
 ## Tech Stack
 
 - **Frontend**: React 18, Vite, TypeScript, Tailwind CSS, shadcn/ui

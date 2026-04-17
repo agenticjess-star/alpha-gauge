@@ -37,6 +37,7 @@ export function useClobWebSocket(tokenIds: string[], options?: UseClobWebSocketO
   const pingTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const currentTokenIds = useRef<string[]>([]);
   const reconnectAttempts = useRef(0);
+  const shouldReconnect = useRef(true);
   const onNewMarketRef = useRef(options?.onNewMarket);
   onNewMarketRef.current = options?.onNewMarket;
   const maxReconnectDelay = 30000;
@@ -69,6 +70,13 @@ export function useClobWebSocket(tokenIds: string[], options?: UseClobWebSocketO
   }, []);
 
   const connect = useCallback(() => {
+    if (!shouldReconnect.current) return;
+
+    if (reconnectTimer.current) {
+      clearTimeout(reconnectTimer.current);
+      reconnectTimer.current = null;
+    }
+
     if (wsRef.current) {
       wsRef.current.close();
       wsRef.current = null;
@@ -132,10 +140,12 @@ export function useClobWebSocket(tokenIds: string[], options?: UseClobWebSocketO
     ws.onclose = () => {
       setState(prev => ({ ...prev, connected: false }));
       stopPing();
-      const delay = Math.min(1000 * 2 ** reconnectAttempts.current, maxReconnectDelay);
-      reconnectAttempts.current++;
-      console.log(`[CLOB-WS] Reconnecting in ${delay}ms`);
-      reconnectTimer.current = setTimeout(connect, delay);
+      if (shouldReconnect.current) {
+        const delay = Math.min(1000 * 2 ** reconnectAttempts.current, maxReconnectDelay);
+        reconnectAttempts.current++;
+        console.log(`[CLOB-WS] Reconnecting in ${delay}ms`);
+        reconnectTimer.current = setTimeout(connect, delay);
+      }
     };
   }, [subscribe, startPing, stopPing]);
 
@@ -157,9 +167,11 @@ export function useClobWebSocket(tokenIds: string[], options?: UseClobWebSocketO
   // Connect on mount, disconnect on unmount
   useEffect(() => {
     currentTokenIds.current = tokenIds.filter(Boolean);
+    shouldReconnect.current = true;
     connect();
 
     return () => {
+      shouldReconnect.current = false;
       stopPing();
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
       if (wsRef.current) {
